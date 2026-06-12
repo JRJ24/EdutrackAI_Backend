@@ -10,7 +10,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["users", "auth", "academic_profile", "subject", "quizz"]
+  schemas  = ["users", "auth", "academics", "system", "quizz"]
 }
 
 model User {
@@ -72,7 +72,7 @@ model AcademicProfile {
   createdAt DateTime @default(now())
   updateAt  DateTime @updatedAt
 
-  @@schema("academic_profile")
+  @@schema("academics")
 }
 
 model Subject {
@@ -92,7 +92,7 @@ model Subject {
   resouces        Resouces[]
   recommendations Recommendations[]
 
-  @@schema("subject")
+  @@schema("academics")
 }
 
 model UserSubject {
@@ -203,7 +203,7 @@ model Grades {
   user    User    @relation(fields: [userId], references: [id])
   subject Subject @relation(fields: [subjectId], references: [id])
 
-  @@schema("academic_profile")
+  @@schema("academics")
 }
 
 model StudySessions {
@@ -220,7 +220,7 @@ model StudySessions {
   user    User    @relation(fields: [userId], references: [id])
   subject Subject @relation(fields: [subjectId], references: [id])
 
-  @@schema("academic_profile")
+  @@schema("academics")
 }
 
 model Resouces {
@@ -239,7 +239,7 @@ model Resouces {
   subject         Subject           @relation(fields: [subjectId], references: [id])
   recommendations Recommendations[]
 
-  @@schema("subject")
+  @@schema("academics")
 }
 
 model Recommendations {
@@ -259,7 +259,7 @@ model Recommendations {
   subject  Subject  @relation(fields: [subjectId], references: [id])
   resource Resouces @relation(fields: [resourceId], references: [id])
 
-  @@schema("subject")
+  @@schema("academics")
 }
 
 model Notifications {
