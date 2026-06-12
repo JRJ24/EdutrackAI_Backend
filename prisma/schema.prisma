@@ -10,7 +10,11 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+<<<<<<< HEAD
   schemas  = ["users", "auth", "academics", "system", "quizz"]
+=======
+  schemas  = ["auth", "system", "users", "academics", "quizz"]
+>>>>>>> 49b53a77ea8823403bfc3090e1fc542f765e7ab4
 }
 
 model User {
@@ -41,6 +45,9 @@ model User {
   studySessions   StudySessions[]
   recommendations Recommendations[]
   notifications   Notifications[]
+  auditLogs       AuditLog[]
+  gradeChanges    GradeChange[]
+  loginHistories  LoginHistory[]
 
   @@schema("users")
 }
@@ -72,7 +79,11 @@ model AcademicProfile {
   createdAt DateTime @default(now())
   updateAt  DateTime @updatedAt
 
+<<<<<<< HEAD
   @@schema("academics")
+=======
+  @@schema("users")
+>>>>>>> 49b53a77ea8823403bfc3090e1fc542f765e7ab4
 }
 
 model Subject {
@@ -92,7 +103,7 @@ model Subject {
   resouces        Resouces[]
   recommendations Recommendations[]
 
-  @@schema("academics")
+  @@schema("system")
 }
 
 model UserSubject {
@@ -125,7 +136,7 @@ model Quizzies {
   user    User    @relation(fields: [createBy], references: [id])
 
   quizziesAttempts QuizAttempts[]
-  question          Questions[]
+  question         Questions[]
 
   @@schema("quizz")
 }
@@ -200,8 +211,9 @@ model Grades {
   date        DateTime
   createdAt   DateTime @default(now()) @map("created_at")
 
-  user    User    @relation(fields: [userId], references: [id])
-  subject Subject @relation(fields: [subjectId], references: [id])
+  user         User          @relation(fields: [userId], references: [id])
+  subject      Subject       @relation(fields: [subjectId], references: [id])
+  gradeChanges GradeChange[]
 
   @@schema("academics")
 }
@@ -239,7 +251,7 @@ model Resouces {
   subject         Subject           @relation(fields: [subjectId], references: [id])
   recommendations Recommendations[]
 
-  @@schema("academics")
+  @@schema("system")
 }
 
 model Recommendations {
@@ -274,5 +286,52 @@ model Notifications {
 
   user User @relation(fields: [userId], references: [id])
 
-  @@schema("users")
+  @@schema("system")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?  @map("user_id")
+  action     String
+  entityName String   @map("entity_name")
+  entityId   String?  @map("entity_id")
+  oldValues  Json?    @map("old_values")
+  newValues  Json?    @map("new_values")
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@schema("system")
+}
+
+model GradeChange {
+  id          String   @id @default(uuid())
+  gradeId     String   @map("grade_id")
+  changedById String   @map("changed_by_id")
+  oldValue    Decimal  @map("old_value")
+  newValue    Decimal  @map("new_value")
+  reason      String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  grade     Grades @relation(fields: [gradeId], references: [id])
+  changedBy User   @relation(fields: [changedById], references: [id])
+
+  @@schema("academics")
+}
+
+model LoginHistory {
+  id            String   @id @default(uuid())
+  userId        String?  @map("user_id")
+  email         String
+  success       Boolean
+  failureReason String?  @map("failure_reason")
+  ipAddress     String?  @map("ip_address")
+  userAgent     String?  @map("user_agent")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@schema("auth")
 }
