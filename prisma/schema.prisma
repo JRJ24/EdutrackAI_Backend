@@ -10,11 +10,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-<<<<<<< HEAD
-  schemas  = ["users", "auth", "academics", "system", "quizz"]
-=======
   schemas  = ["auth", "system", "users", "academics", "quizz"]
->>>>>>> 49b53a77ea8823403bfc3090e1fc542f765e7ab4
 }
 
 model User {
@@ -79,11 +75,7 @@ model AcademicProfile {
   createdAt DateTime @default(now())
   updateAt  DateTime @updatedAt
 
-<<<<<<< HEAD
-  @@schema("academics")
-=======
   @@schema("users")
->>>>>>> 49b53a77ea8823403bfc3090e1fc542f765e7ab4
 }
 
 model Subject {
