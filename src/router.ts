@@ -1,10 +1,34 @@
 import { Router } from "express";
 import authRoutes from "./modules/auth/auth.routes";
 import rolesRoutes from "./modules/roles/roles.routes";
+import usersRoutes from "./modules/users/user.routes";
+import academicProfileRoutes from "./modules/academic-profile/academic-profile.routes";
+import subjectsRoutes from "./modules/subjects/subjects.routes";
+import gradesRoutes from "./modules/grades/grades.routes";
+import studySessionsRoutes from "./modules/study-sessions/study-sessions.routes";
+import quizziesRoutes from "./modules/quizzies/quizzies.routes";
+import questionsRoutes from "./modules/questions/questions.routes";
+import resourcesRoutes from "./modules/resources/resource.routes";
+import recommendationsRoutes from "./modules/recommendations/recommendations.routes";
+import notificationsRoutes from "./modules/notifications/notifications.routes";
+import dashboardRoutes from "./modules/dashboard/dashboard.routes";
+import adminRoutes from "./modules/admin/admin.routes";
 
 const router: Router = Router();
 
 router.use("/auth", authRoutes);
 router.use("/roles", rolesRoutes);
+router.use("/users", usersRoutes);
+router.use("/academic-profile", academicProfileRoutes);
+router.use("/subjects", subjectsRoutes);
+router.use("/grades", gradesRoutes);
+router.use("/study-sessions", studySessionsRoutes);
+router.use("/quizzies", quizziesRoutes);
+router.use("/questions", questionsRoutes);
+router.use("/resources", resourcesRoutes);
+router.use("/recommendations", recommendationsRoutes);
+router.use("/notifications", notificationsRoutes);
+router.use("/dashboard", dashboardRoutes);
+router.use("/admin", adminRoutes);
 
 export default router;
