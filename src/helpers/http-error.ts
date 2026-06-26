@@ -15,6 +15,24 @@ export const getErrorResponse = (error: unknown, fallbackMessage: string) => {
     };
   }
 
+  if (typeof error === "object" && error !== null && "code" in error) {
+    const code = (error as { code?: string }).code;
+
+    if (code === "P2002") {
+      return {
+        statusCode: 409,
+        message: "Record already exists",
+      };
+    }
+
+    if (code === "P2025") {
+      return {
+        statusCode: 404,
+        message: "Record not found",
+      };
+    }
+  }
+
   return {
     statusCode: 500,
     message: fallbackMessage,
