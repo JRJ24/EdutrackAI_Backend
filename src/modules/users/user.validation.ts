@@ -38,7 +38,12 @@ export const updateUserSchema = nonEmptyObject(
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1),
   newPassword: passwordSchema,
-});
+  confirmNewPassword: z.string().min(1),
+})
+.refine((data) => data.newPassword === data.confirmNewPassword, {
+    message: "New password and confirmation do not match",
+    path: ["confirmNewPassword"],
+  });
 
 export const idParamSchema = z.object({
   id: z.string().uuid(),
