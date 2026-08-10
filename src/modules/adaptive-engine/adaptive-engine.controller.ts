@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { getErrorResponse } from "../../helpers/http-error";
+import { adaptiveAdminService } from "./adaptive-admin.service";
 import { adaptiveEngineService } from "./adaptive-engine.service";
 import { adaptiveHistoryService } from "./adaptive-history.service";
 
@@ -38,6 +39,20 @@ const getHistory = async (req: Request, res: Response) => {
   }
 };
 
+const getAdminRiskOverview = async (_req: Request, res: Response) => {
+  try {
+    const data = await adaptiveAdminService.getRiskOverview();
+    return res.status(200).json({
+      ok: true,
+      message: "Administrative adaptive risk overview fetched successfully",
+      data,
+    });
+  } catch (error) {
+    const result = getErrorResponse(error, "Failed to fetch administrative adaptive risk overview");
+    return res.status(result.statusCode).json({ ok: false, message: result.message });
+  }
+};
+
 const recalculate = async (req: Request, res: Response) => {
   try {
     const user = requireUser(req);
@@ -62,6 +77,7 @@ const recalculateAll = async (_req: Request, res: Response) => {
 export const adaptiveEngineController = {
   getOverview,
   getHistory,
+  getAdminRiskOverview,
   recalculate,
   recalculateAll,
 };
