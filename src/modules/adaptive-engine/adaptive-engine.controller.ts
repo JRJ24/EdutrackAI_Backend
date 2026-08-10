@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { getErrorResponse } from "../../helpers/http-error";
 import { adaptiveEngineService } from "./adaptive-engine.service";
+import { adaptiveHistoryService } from "./adaptive-history.service";
 
 const requireUser = (req: Request) => {
   if (!req.user) throw new Error("Authentication required");
@@ -14,6 +15,25 @@ const getOverview = async (req: Request, res: Response) => {
     return res.status(200).json({ ok: true, message: "Adaptive overview fetched successfully", data });
   } catch (error) {
     const result = getErrorResponse(error, "Failed to fetch adaptive overview");
+    return res.status(result.statusCode).json({ ok: false, message: result.message });
+  }
+};
+
+const getHistory = async (req: Request, res: Response) => {
+  try {
+    const user = requireUser(req);
+    const subjectId = typeof req.query.subjectId === "string" ? req.query.subjectId : undefined;
+    const parsedLimit = Number(req.query.limit ?? 60);
+    const limit = Number.isFinite(parsedLimit) ? parsedLimit : 60;
+    const data = await adaptiveHistoryService.getHistory(user.userId, subjectId, limit);
+
+    return res.status(200).json({
+      ok: true,
+      message: "Adaptive risk history fetched successfully",
+      data,
+    });
+  } catch (error) {
+    const result = getErrorResponse(error, "Failed to fetch adaptive risk history");
     return res.status(result.statusCode).json({ ok: false, message: result.message });
   }
 };
@@ -41,6 +61,7 @@ const recalculateAll = async (_req: Request, res: Response) => {
 
 export const adaptiveEngineController = {
   getOverview,
+  getHistory,
   recalculate,
   recalculateAll,
 };
