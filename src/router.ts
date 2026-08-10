@@ -13,6 +13,9 @@ import recommendationsRoutes from "./modules/recommendations/recommendations.rou
 import notificationsRoutes from "./modules/notifications/notifications.routes";
 import dashboardRoutes from "./modules/dashboard/dashboard.routes";
 import adminRoutes from "./modules/admin/admin.routes";
+import adaptiveEngineRoutes from "./modules/adaptive-engine/adaptive-engine.routes";
+import evaluationsRoutes from "./modules/evaluations/evaluations.routes";
+import studyPlanRoutes from "./modules/study-plan/study-plan.routes";
 
 const router: Router = Router();
 
@@ -30,5 +33,8 @@ router.use("/recommendations", recommendationsRoutes);
 router.use("/notifications", notificationsRoutes);
 router.use("/dashboard", dashboardRoutes);
 router.use("/admin", adminRoutes);
+router.use("/adaptive-engine", adaptiveEngineRoutes);
+router.use("/evaluations", evaluationsRoutes);
+router.use("/study-plan", studyPlanRoutes);
 
 export default router;
