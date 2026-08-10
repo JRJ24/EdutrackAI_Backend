@@ -6,6 +6,12 @@ const router = Router();
 
 router.get("/overview", requireAuth, adaptiveEngineController.getOverview);
 router.get("/history", requireAuth, adaptiveEngineController.getHistory);
+router.get(
+  "/admin/risks",
+  requireAuth,
+  requireRole("admin"),
+  adaptiveEngineController.getAdminRiskOverview,
+);
 router.post("/recalculate", requireAuth, adaptiveEngineController.recalculate);
 router.post(
   "/recalculate-all",
