@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { getErrorResponse } from "../../helpers/http-error";
+import { completeInProgressPlanActivity } from "../adaptive-engine/adaptive-engine.actions";
 import { triggerAdaptiveRecalculation } from "../adaptive-engine/adaptive-engine.events";
 import { studySessionsService } from "./study-sessions.service";
 
@@ -86,6 +87,7 @@ const getBySubject = async (req: Request, res: Response) => {
 const create = async (req: Request, res: Response) => {
   try {
     const data = await studySessionsService.create(req.body);
+    await completeInProgressPlanActivity(data.user.id, data.subject.id);
     triggerAdaptiveRecalculation(data.user.id, "study_session_saved");
 
     return res.status(201).json({
@@ -106,6 +108,7 @@ const create = async (req: Request, res: Response) => {
 const update = async (req: Request, res: Response) => {
   try {
     const data = await studySessionsService.update(String(req.params.id), req.body);
+    await completeInProgressPlanActivity(data.user.id, data.subject.id);
     triggerAdaptiveRecalculation(data.user.id, "study_session_saved");
 
     return res.status(200).json({
