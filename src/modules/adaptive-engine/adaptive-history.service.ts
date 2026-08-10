@@ -5,7 +5,7 @@ const getHistory = async (
   subjectId?: string,
   requestedLimit = 60,
 ) => {
-  const limit = Math.min(200, Math.max(1, requestedLimit));
+  const limit = Math.min(200, Math.max(1, Math.floor(requestedLimit)));
 
   return prisma.riskSnapshot.findMany({
     where: {
