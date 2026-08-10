@@ -1,6 +1,7 @@
 import { Prisma } from "../../../generated/prisma/client";
 import { prisma } from "../../database/prisma";
 import { HttpError } from "../../helpers/http-error";
+import { triggerAdaptiveRecalculation } from "../adaptive-engine/adaptive-engine.events";
 import { CreateGradeInput, UpdateGradeInput } from "./grades.validation";
 
 const gradeSelect = {
@@ -86,7 +87,7 @@ const getBySubject = async (subjectId: string, requestingUserId: string, isAdmin
 const create = async (data: CreateGradeInput, changedById: string) => {
   await ensureUserSubjectLink(data.userId, data.subjectId);
 
-  return prisma.grades.create({
+  const result = await prisma.grades.create({
     data: {
       userId: data.userId,
       subjectId: data.subjectId,
@@ -97,6 +98,9 @@ const create = async (data: CreateGradeInput, changedById: string) => {
     },
     select: gradeSelect,
   });
+
+  triggerAdaptiveRecalculation(data.userId, "grade_created");
+  return result;
 };
 
 const update = async (
@@ -106,7 +110,7 @@ const update = async (
 ) => {
   const existing = await prisma.grades.findUnique({
     where: { id },
-    select: { id: true, gradeValue: true },
+    select: { id: true, userId: true, gradeValue: true },
   });
 
   if (!existing) {
@@ -150,11 +154,19 @@ const update = async (
     return updated;
   });
 
+  triggerAdaptiveRecalculation(existing.userId, "grade_updated");
   return result;
 };
 
 const remove = async (id: string) => {
+  const existing = await prisma.grades.findUnique({
+    where: { id },
+    select: { userId: true },
+  });
+  if (!existing) throw new HttpError(404, "Grade not found");
+
   await prisma.grades.delete({ where: { id } });
+  triggerAdaptiveRecalculation(existing.userId, "grade_updated");
 };
 
 export const gradesService = {
