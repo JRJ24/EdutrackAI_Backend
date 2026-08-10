@@ -338,6 +338,15 @@ const syncPlanActivity = async (
 
   const todayKey = new Date().toISOString().slice(0, 10);
   const engineKey = `${userId}:${analysis.subjectId}:${todayKey}`;
+  const existingActivity = await prisma.studyPlanActivity.findUnique({
+    where: { engineKey },
+    select: { id: true, engineKey: true, status: true },
+  });
+
+  if (existingActivity && ["completed", "skipped"].includes(existingActivity.status)) {
+    return existingActivity;
+  }
+
   const activityType = chooseActivityType(analysis);
   const scheduledFor = nextRelativeSchedule(analysis.level);
   const durationMinutes = durationFor(analysis.level, weeklyGoalHours);
