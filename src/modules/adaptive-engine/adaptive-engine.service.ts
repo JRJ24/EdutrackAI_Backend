@@ -14,6 +14,7 @@ export type AdaptiveTrigger =
 type RiskLevel = "stable" | "watch" | "attention" | "high";
 
 interface RiskComponents {
+  [key: string]: number;
   performance: number;
   evaluationUrgency: number;
   inactivity: number;
