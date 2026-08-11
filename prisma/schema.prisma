@@ -28,6 +28,7 @@ model User {
   role   Roles  @relation(fields: [roleId], references: [id])
 
   academicProfile  AcademicProfile[]
+  studentContext   StudentContext?
   subjectUser      UserSubject[]
   quizzies         Quizzies[]
   quizziesAttempts QuizAttempts[]
@@ -80,6 +81,24 @@ model AcademicProfile {
   @@schema("users")
 }
 
+model StudentContext {
+  id                  String   @id @default(uuid())
+  userId              String   @unique @map("user_id")
+  institutionKey      String   @map("institution_key")
+  institutionName     String   @map("institution_name")
+  programKey          String   @map("program_key")
+  programName         String   @map("program_name")
+  currentPeriod       Int      @map("current_period")
+  sourceUrl           String?  @map("source_url")
+  onboardingCompleted Boolean  @default(false) @map("onboarding_completed")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updateAt            DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@schema("users")
+}
+
 model Subject {
   id          String  @id @default(uuid())
   name        String
@@ -104,16 +123,20 @@ model Subject {
 }
 
 model UserSubject {
-  id              String @id @default(uuid())
-  userId          String @map("user_id")
-  subjectId       String @map("subject_id")
-  currentAverage  String @map("current_average")
-  difficultyLevel String @map("difficulty_level")
-  status          String
+  id               String  @id @default(uuid())
+  userId           String  @map("user_id")
+  subjectId        String  @map("subject_id")
+  currentAverage   String  @map("current_average")
+  difficultyLevel  String  @map("difficulty_level")
+  status           String
+  curriculumCode   String? @map("curriculum_code")
+  curriculumPeriod Int?    @map("curriculum_period")
+  source           String  @default("manual")
 
   user    User    @relation(fields: [userId], references: [id])
   subject Subject @relation(fields: [subjectId], references: [id])
 
+  @@index([userId, status])
   @@schema("users")
 }
 
