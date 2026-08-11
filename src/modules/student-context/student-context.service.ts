@@ -3,6 +3,7 @@ import { HttpError } from "../../helpers/http-error";
 import { academicCatalog, findInstitution, findProgram } from "./academic-catalog";
 import type {
   ApplyCatalogInput,
+  CustomContextInput,
   CustomSubjectInput,
   UpdateMySubjectInput,
 } from "./student-context.validation";
@@ -58,6 +59,39 @@ const getMyContext = async (userId: string) => {
   ]);
 
   return { context, subjects };
+};
+
+const saveCustomContext = async (userId: string, data: CustomContextInput) => {
+  await prisma.$transaction([
+    prisma.studentContext.upsert({
+      where: { userId },
+      update: {
+        institutionKey: "custom",
+        institutionName: data.institutionName,
+        programKey: "custom",
+        programName: data.programName,
+        currentPeriod: data.currentPeriod,
+        sourceUrl: null,
+        onboardingCompleted: true,
+      },
+      create: {
+        userId,
+        institutionKey: "custom",
+        institutionName: data.institutionName,
+        programKey: "custom",
+        programName: data.programName,
+        currentPeriod: data.currentPeriod,
+        sourceUrl: null,
+        onboardingCompleted: true,
+      },
+    }),
+    prisma.user.update({
+      where: { id: userId },
+      data: { career: data.programName },
+    }),
+  ]);
+
+  return getMyContext(userId);
 };
 
 const applyCatalog = async (userId: string, data: ApplyCatalogInput) => {
@@ -266,6 +300,7 @@ export const studentContextService = {
   getCatalog,
   getProgram,
   getMyContext,
+  saveCustomContext,
   applyCatalog,
   addCustomSubject,
   updateMySubject,
