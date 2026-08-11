@@ -27,11 +27,12 @@ model User {
   roleId String
   role   Roles  @relation(fields: [roleId], references: [id])
 
-  academicProfile  AcademicProfile[]
-  studentContext   StudentContext?
-  subjectUser      UserSubject[]
-  quizzies         Quizzies[]
-  quizziesAttempts QuizAttempts[]
+  academicProfile      AcademicProfile[]
+  studentContext       StudentContext?
+  studentAcademicItems StudentAcademicItem[]
+  subjectUser          UserSubject[]
+  quizzies             Quizzies[]
+  quizziesAttempts     QuizAttempts[]
 
   createdAt       DateTime @default(now())
   updateAt        DateTime @updatedAt
@@ -99,6 +100,27 @@ model StudentContext {
   @@schema("users")
 }
 
+model StudentAcademicItem {
+  id          String    @id @default(uuid())
+  userId      String    @map("user_id")
+  subjectId   String    @map("subject_id")
+  itemType    String    @map("item_type")
+  title       String
+  description String?
+  topic       String?
+  url         String?
+  scheduledAt DateTime? @map("scheduled_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updateAt    DateTime  @updatedAt @map("updated_at")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@index([userId, itemType, scheduledAt])
+  @@index([userId, subjectId])
+  @@schema("academics")
+}
+
 model Subject {
   id          String  @id @default(uuid())
   name        String
@@ -109,15 +131,16 @@ model Subject {
   subject  UserSubject[]
   quizzies Quizzies[]
 
-  createdAt       DateTime @default(now())
-  updateAt        DateTime @updatedAt
-  grades          Grades[]
-  studySessions   StudySessions[]
-  resouces        Resouces[]
-  recommendations Recommendations[]
-  evaluations     Evaluation[]
-  studyPlanActivities StudyPlanActivity[]
-  riskSnapshots       RiskSnapshot[]
+  createdAt            DateTime @default(now())
+  updateAt             DateTime @updatedAt
+  grades               Grades[]
+  studySessions        StudySessions[]
+  resouces             Resouces[]
+  recommendations      Recommendations[]
+  evaluations          Evaluation[]
+  studentAcademicItems StudentAcademicItem[]
+  studyPlanActivities  StudyPlanActivity[]
+  riskSnapshots        RiskSnapshot[]
 
   @@schema("system")
 }
