@@ -55,6 +55,17 @@ const applyCatalog = async (req: Request, res: Response) => {
   }
 };
 
+const saveCustomContext = async (req: Request, res: Response) => {
+  try {
+    const user = requireUser(req);
+    const data = await studentContextService.saveCustomContext(user.userId, req.body);
+    return res.status(200).json({ ok: true, message: "Manual academic context configured successfully", data });
+  } catch (error) {
+    const result = getErrorResponse(error, "Failed to configure manual academic context");
+    return res.status(result.statusCode).json({ ok: false, message: result.message });
+  }
+};
+
 const addCustomSubject = async (req: Request, res: Response) => {
   try {
     const user = requireUser(req);
@@ -100,6 +111,7 @@ export const studentContextController = {
   getProgram,
   getMe,
   applyCatalog,
+  saveCustomContext,
   addCustomSubject,
   updateMySubject,
   removeMySubject,
