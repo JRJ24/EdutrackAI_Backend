@@ -16,6 +16,7 @@ import adminRoutes from "./modules/admin/admin.routes";
 import adaptiveEngineRoutes from "./modules/adaptive-engine/adaptive-engine.routes";
 import evaluationsRoutes from "./modules/evaluations/evaluations.routes";
 import studyPlanRoutes from "./modules/study-plan/study-plan.routes";
+import studentContextRoutes from "./modules/student-context/student-context.routes";
 
 const router: Router = Router();
 
@@ -36,5 +37,6 @@ router.use("/admin", adminRoutes);
 router.use("/adaptive-engine", adaptiveEngineRoutes);
 router.use("/evaluations", evaluationsRoutes);
 router.use("/study-plan", studyPlanRoutes);
+router.use("/student-context", studentContextRoutes);
 
 export default router;
