@@ -17,6 +17,7 @@ import adaptiveEngineRoutes from "./modules/adaptive-engine/adaptive-engine.rout
 import evaluationsRoutes from "./modules/evaluations/evaluations.routes";
 import studyPlanRoutes from "./modules/study-plan/study-plan.routes";
 import studentContextRoutes from "./modules/student-context/student-context.routes";
+import learningResourcesRoutes from "./modules/learning-resources/learning-resources.routes";
 
 const router: Router = Router();
 
@@ -38,5 +39,6 @@ router.use("/adaptive-engine", adaptiveEngineRoutes);
 router.use("/evaluations", evaluationsRoutes);
 router.use("/study-plan", studyPlanRoutes);
 router.use("/student-context", studentContextRoutes);
+router.use("/learning-resources", learningResourcesRoutes);
 
 export default router;
