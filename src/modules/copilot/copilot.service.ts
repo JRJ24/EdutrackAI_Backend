@@ -32,23 +32,58 @@ const buildPulse = async (userId: string) => {
   ]);
 
   const subjectIds = assignments.map((assignment) => assignment.subject.id);
-  const upcomingEvaluation = subjectIds.length
-    ? await prisma.evaluation.findFirst({
-        where: {
-          subjectId: { in: subjectIds },
-          isActive: true,
-          scheduledAt: { gte: new Date() },
-        },
-        select: {
-          id: true,
-          title: true,
-          evaluationType: true,
-          scheduledAt: true,
-          subject: { select: { id: true, name: true } },
-        },
-        orderBy: { scheduledAt: "asc" },
-      })
+  const [officialEvaluation, personalDeadline] = subjectIds.length
+    ? await Promise.all([
+        prisma.evaluation.findFirst({
+          where: {
+            subjectId: { in: subjectIds },
+            isActive: true,
+            scheduledAt: { gte: new Date() },
+          },
+          select: {
+            id: true,
+            title: true,
+            evaluationType: true,
+            scheduledAt: true,
+            subject: { select: { id: true, name: true } },
+          },
+          orderBy: { scheduledAt: "asc" },
+        }),
+        prisma.studentAcademicItem.findFirst({
+          where: {
+            userId,
+            subjectId: { in: subjectIds },
+            itemType: "deadline",
+            scheduledAt: { gte: new Date() },
+          },
+          select: {
+            id: true,
+            title: true,
+            scheduledAt: true,
+            subject: { select: { id: true, name: true } },
+          },
+          orderBy: { scheduledAt: "asc" },
+        }),
+      ])
+    : [null, null];
+
+  const official = officialEvaluation
+    ? { ...officialEvaluation, source: "institution" as const }
     : null;
+  const personal = personalDeadline?.scheduledAt
+    ? {
+        id: personalDeadline.id,
+        title: personalDeadline.title,
+        evaluationType: "Fecha personal",
+        scheduledAt: personalDeadline.scheduledAt,
+        subject: personalDeadline.subject,
+        source: "student" as const,
+      }
+    : null;
+
+  const upcomingEvaluation = official && personal
+    ? (official.scheduledAt <= personal.scheduledAt ? official : personal)
+    : official ?? personal;
 
   const activity = overview.plan[0] ?? null;
   const priority = overview.priority;
@@ -65,8 +100,8 @@ const buildPulse = async (userId: string) => {
     const days = daysUntil(upcomingEvaluation.scheduledAt);
     headline = `Prepárate para ${upcomingEvaluation.title}`;
     message = days === 0
-      ? `La evaluación de ${upcomingEvaluation.subject.name} es hoy.`
-      : `Faltan ${days} día${days === 1 ? "" : "s"} para tu evaluación de ${upcomingEvaluation.subject.name}.`;
+      ? `${upcomingEvaluation.title} de ${upcomingEvaluation.subject.name} es hoy.`
+      : `Faltan ${days} día${days === 1 ? "" : "s"} para ${upcomingEvaluation.title} de ${upcomingEvaluation.subject.name}.`;
   } else if (assignments.length > 0) {
     headline = "Tu semestre está bajo control.";
     message = "No hay una urgencia académica detectada. Puedes practicar una materia o continuar con tu ritmo actual.";
