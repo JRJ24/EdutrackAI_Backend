@@ -5,6 +5,7 @@ import { validateBody, validateParams } from "../../middlewares/validate.middlew
 import { studentContextController } from "./student-context.controller";
 import {
   applyCatalogSchema,
+  customContextSchema,
   customSubjectSchema,
   updateMySubjectSchema,
 } from "./student-context.validation";
@@ -33,6 +34,12 @@ router.post(
   requireAuth,
   validateBody(applyCatalogSchema),
   studentContextController.applyCatalog,
+);
+router.post(
+  "/custom",
+  requireAuth,
+  validateBody(customContextSchema),
+  studentContextController.saveCustomContext,
 );
 router.post(
   "/subjects/custom",
