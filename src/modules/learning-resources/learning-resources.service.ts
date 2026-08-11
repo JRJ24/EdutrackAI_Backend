@@ -10,7 +10,7 @@ export interface DiscoveredLearningResource {
   resourceType: string;
   topic: string;
   difficulty: string;
-  sourceKind: "course_resource" | "provider_search";
+  sourceKind: "student_material" | "course_resource" | "provider_search";
   verifiedProvider: boolean;
 }
 
@@ -115,17 +115,47 @@ const discover = async (userId: string, subjectId: string, topic?: string) => {
     throw new HttpError(404, "Active subject not found in your current term");
   }
 
-  const stored = await prisma.resouces.findMany({
-    where: {
-      subjectId,
-      isActive: true,
-      ...(topic?.trim()
-        ? { topic: { contains: topic.trim(), mode: "insensitive" } }
-        : {}),
-    },
-    orderBy: { createdAt: "desc" },
-    take: 20,
-  });
+  const [stored, personalMaterials] = await Promise.all([
+    prisma.resouces.findMany({
+      where: {
+        subjectId,
+        isActive: true,
+        ...(topic?.trim()
+          ? { topic: { contains: topic.trim(), mode: "insensitive" } }
+          : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    }),
+    prisma.studentAcademicItem.findMany({
+      where: {
+        userId,
+        subjectId,
+        itemType: "material",
+        url: { not: null },
+        ...(topic?.trim()
+          ? { topic: { contains: topic.trim(), mode: "insensitive" } }
+          : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    }),
+  ]);
+
+  const personal: DiscoveredLearningResource[] = personalMaterials
+    .filter((item) => Boolean(item.url))
+    .map((item) => ({
+      id: item.id,
+      title: item.title,
+      description: item.description ?? "Material que agregaste desde tu clase.",
+      url: item.url ?? "",
+      provider: item.url ? hostnameOf(item.url) : "Material de clase",
+      resourceType: "Material de clase",
+      topic: item.topic ?? topic?.trim() ?? assignment.subject.name,
+      difficulty: "Tu curso",
+      sourceKind: "student_material",
+      verifiedProvider: false,
+    }));
 
   const realStored: DiscoveredLearningResource[] = stored
     .filter((resource) => !resource.url.includes("example.com"))
@@ -146,6 +176,7 @@ const discover = async (userId: string, subjectId: string, topic?: string) => {
     subject: assignment.subject,
     topic: topic?.trim() || null,
     resources: [
+      ...personal,
       ...realStored,
       ...externalResourcesFor(assignment.subject.name, topic),
     ],
