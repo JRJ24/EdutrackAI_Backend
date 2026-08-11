@@ -18,6 +18,7 @@ import evaluationsRoutes from "./modules/evaluations/evaluations.routes";
 import studyPlanRoutes from "./modules/study-plan/study-plan.routes";
 import studentContextRoutes from "./modules/student-context/student-context.routes";
 import learningResourcesRoutes from "./modules/learning-resources/learning-resources.routes";
+import copilotRoutes from "./modules/copilot/copilot.routes";
 
 const router: Router = Router();
 
@@ -40,5 +41,6 @@ router.use("/evaluations", evaluationsRoutes);
 router.use("/study-plan", studyPlanRoutes);
 router.use("/student-context", studentContextRoutes);
 router.use("/learning-resources", learningResourcesRoutes);
+router.use("/copilot", copilotRoutes);
 
 export default router;
