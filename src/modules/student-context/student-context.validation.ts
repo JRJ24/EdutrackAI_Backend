@@ -7,6 +7,12 @@ export const applyCatalogSchema = z.object({
   selectedSubjectKeys: z.array(z.string().min(1)).min(1),
 });
 
+export const customContextSchema = z.object({
+  institutionName: z.string().trim().min(2).max(160),
+  programName: z.string().trim().min(2).max(160),
+  currentPeriod: z.number().int().min(1).max(20),
+});
+
 export const customSubjectSchema = z.object({
   name: z.string().trim().min(2).max(120),
   description: z.string().trim().max(500).optional(),
@@ -19,5 +25,6 @@ export const updateMySubjectSchema = z.object({
 });
 
 export type ApplyCatalogInput = z.infer<typeof applyCatalogSchema>;
+export type CustomContextInput = z.infer<typeof customContextSchema>;
 export type CustomSubjectInput = z.infer<typeof customSubjectSchema>;
 export type UpdateMySubjectInput = z.infer<typeof updateMySubjectSchema>;
