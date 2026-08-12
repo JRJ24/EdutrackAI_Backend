@@ -1,8 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client"
   output   = "./../generated/prisma"
@@ -29,10 +27,12 @@ model User {
   roleId String
   role   Roles  @relation(fields: [roleId], references: [id])
 
-  academicProfile  AcademicProfile[]
-  subjectUser      UserSubject[]
-  quizzies         Quizzies[]
-  quizziesAttempts QuizAttempts[]
+  academicProfile      AcademicProfile[]
+  studentContext       StudentContext?
+  studentAcademicItems StudentAcademicItem[]
+  subjectUser          UserSubject[]
+  quizzies             Quizzies[]
+  quizziesAttempts     QuizAttempts[]
 
   createdAt       DateTime @default(now())
   updateAt        DateTime @updatedAt
@@ -44,6 +44,10 @@ model User {
   auditLogs       AuditLog[]
   gradeChanges    GradeChange[]
   loginHistories  LoginHistory[]
+
+  evaluationsCreated Evaluation[]         @relation("EvaluationCreatedBy")
+  studyPlanActivities StudyPlanActivity[]
+  riskSnapshots       RiskSnapshot[]
 
   @@schema("users")
 }
@@ -78,6 +82,45 @@ model AcademicProfile {
   @@schema("users")
 }
 
+model StudentContext {
+  id                  String   @id @default(uuid())
+  userId              String   @unique @map("user_id")
+  institutionKey      String   @map("institution_key")
+  institutionName     String   @map("institution_name")
+  programKey          String   @map("program_key")
+  programName         String   @map("program_name")
+  currentPeriod       Int      @map("current_period")
+  sourceUrl           String?  @map("source_url")
+  onboardingCompleted Boolean  @default(false) @map("onboarding_completed")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updateAt            DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@schema("users")
+}
+
+model StudentAcademicItem {
+  id          String    @id @default(uuid())
+  userId      String    @map("user_id")
+  subjectId   String    @map("subject_id")
+  itemType    String    @map("item_type")
+  title       String
+  description String?
+  topic       String?
+  url         String?
+  scheduledAt DateTime? @map("scheduled_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updateAt    DateTime  @updatedAt @map("updated_at")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@index([userId, itemType, scheduledAt])
+  @@index([userId, subjectId])
+  @@schema("academics")
+}
+
 model Subject {
   id          String  @id @default(uuid())
   name        String
@@ -88,27 +131,35 @@ model Subject {
   subject  UserSubject[]
   quizzies Quizzies[]
 
-  createdAt       DateTime @default(now())
-  updateAt        DateTime @updatedAt
-  grades          Grades[]
-  studySessions   StudySessions[]
-  resouces        Resouces[]
-  recommendations Recommendations[]
+  createdAt            DateTime @default(now())
+  updateAt             DateTime @updatedAt
+  grades               Grades[]
+  studySessions        StudySessions[]
+  resouces             Resouces[]
+  recommendations      Recommendations[]
+  evaluations          Evaluation[]
+  studentAcademicItems StudentAcademicItem[]
+  studyPlanActivities  StudyPlanActivity[]
+  riskSnapshots        RiskSnapshot[]
 
   @@schema("system")
 }
 
 model UserSubject {
-  id              String @id @default(uuid())
-  userId          String @map("user_id")
-  subjectId       String @map("subject_id")
-  currentAverage  String @map("current_average")
-  difficultyLevel String @map("difficulty_level")
-  status          String
+  id               String  @id @default(uuid())
+  userId           String  @map("user_id")
+  subjectId        String  @map("subject_id")
+  currentAverage   String  @map("current_average")
+  difficultyLevel  String  @map("difficulty_level")
+  status           String
+  curriculumCode   String? @map("curriculum_code")
+  curriculumPeriod Int?    @map("curriculum_period")
+  source           String  @default("manual")
 
   user    User    @relation(fields: [userId], references: [id])
   subject Subject @relation(fields: [subjectId], references: [id])
 
+  @@index([userId, status])
   @@schema("users")
 }
 
@@ -262,7 +313,80 @@ model Recommendations {
   user     User     @relation(fields: [userId], references: [id])
   subject  Subject  @relation(fields: [subjectId], references: [id])
   resource Resouces @relation(fields: [resourceId], references: [id])
+  studyPlanActivities StudyPlanActivity[]
 
+  @@schema("academics")
+}
+
+model Evaluation {
+  id             String   @id @default(uuid())
+  subjectId      String   @map("subject_id")
+  title          String
+  description    String?
+  evaluationType String   @map("evaluation_type")
+  scheduledAt    DateTime @map("scheduled_at")
+  weight         Decimal?
+  isActive       Boolean  @default(true) @map("is_active")
+  createdBy      String   @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updateAt       DateTime @updatedAt @map("updated_at")
+
+  subject Subject @relation(fields: [subjectId], references: [id])
+  creator User    @relation("EvaluationCreatedBy", fields: [createdBy], references: [id])
+  studyPlanActivities StudyPlanActivity[]
+
+  @@index([subjectId, scheduledAt])
+  @@schema("academics")
+}
+
+model StudyPlanActivity {
+  id               String    @id @default(uuid())
+  engineKey        String    @unique @map("engine_key")
+  userId           String    @map("user_id")
+  subjectId        String    @map("subject_id")
+  evaluationId     String?   @map("evaluation_id")
+  recommendationId String?   @map("recommendation_id")
+  title            String
+  description      String
+  activityType     String    @map("activity_type")
+  topic            String?
+  scheduledFor     DateTime  @map("scheduled_for")
+  durationMinutes  Int       @map("duration_minutes")
+  priorityScore    Int       @map("priority_score")
+  priorityLevel    String    @map("priority_level")
+  status           String    @default("pending")
+  source           String    @default("adaptive_engine")
+  reason           String
+  completedAt      DateTime? @map("completed_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updateAt         DateTime  @updatedAt @map("updated_at")
+
+  user           User             @relation(fields: [userId], references: [id])
+  subject        Subject          @relation(fields: [subjectId], references: [id])
+  evaluation     Evaluation?      @relation(fields: [evaluationId], references: [id], onDelete: SetNull)
+  recommendation Recommendations? @relation(fields: [recommendationId], references: [id], onDelete: SetNull)
+
+  @@index([userId, scheduledFor])
+  @@index([userId, status])
+  @@schema("academics")
+}
+
+model RiskSnapshot {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  subjectId   String   @map("subject_id")
+  score       Int
+  level       String
+  components  Json
+  reasons     Json
+  trigger     String
+  evaluatedAt DateTime @default(now()) @map("evaluated_at")
+
+  user    User    @relation(fields: [userId], references: [id])
+  subject Subject @relation(fields: [subjectId], references: [id])
+
+  @@index([userId, evaluatedAt])
+  @@index([userId, subjectId, evaluatedAt])
   @@schema("academics")
 }
 

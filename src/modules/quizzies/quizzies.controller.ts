@@ -1,5 +1,7 @@
 import { Request, Response } from "express";
 import { getErrorResponse } from "../../helpers/http-error";
+import { completeInProgressPlanActivity } from "../adaptive-engine/adaptive-engine.actions";
+import { triggerAdaptiveRecalculation } from "../adaptive-engine/adaptive-engine.events";
 import { quizziesService } from "./quizzies.service";
 
 const requireUser = (req: Request) => {
@@ -115,6 +117,13 @@ const finishAttempt = async (req: Request, res: Response) => {
   try {
     const user = requireUser(req);
     const data = await quizziesService.finishAttempt(String(req.params.id), user.userId);
+    const subjectId = data.quizzies.subject?.id;
+
+    if (subjectId) {
+      await completeInProgressPlanActivity(user.userId, subjectId, "quiz_review");
+    }
+
+    triggerAdaptiveRecalculation(user.userId, "quiz_finished");
     return res.status(200).json({
       ok: true,
       message: "Quiz attempt finished successfully",

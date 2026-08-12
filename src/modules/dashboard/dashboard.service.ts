@@ -3,11 +3,21 @@ import { Prisma } from "../../../generated/prisma/client";
 
 const HOURS_24 = 24 * 60 * 60 * 1000;
 const DAYS_7 = 7 * HOURS_24;
+const OPEN_ATTEMPT_DATE = new Date(0);
 
 const startOfDay = (date: Date) => {
   const copy = new Date(date);
   copy.setHours(0, 0, 0, 0);
   return copy;
+};
+
+const attemptPercentage = (attempt: { correctAnswers: number; totalQuestion: number; score: unknown }) => {
+  if (attempt.totalQuestion > 0) {
+    return (attempt.correctAnswers / attempt.totalQuestion) * 100;
+  }
+
+  const legacy = Number(attempt.score);
+  return Number.isFinite(legacy) ? Math.min(100, Math.max(0, legacy)) : 0;
 };
 
 export const dashboardService = {
@@ -43,12 +53,14 @@ export const dashboardService = {
           )
         : 0;
 
-    const finishedAttempts = attemptsLastWeek.filter((a) => a.finishedAt);
+    const finishedAttempts = attemptsLastWeek.filter(
+      (attempt) => attempt.finishedAt.getTime() > OPEN_ATTEMPT_DATE.getTime(),
+    );
     const avgScore =
       finishedAttempts.length > 0
         ? Number(
             (
-              finishedAttempts.reduce((acc, a) => acc + Number(a.score), 0) /
+              finishedAttempts.reduce((acc, attempt) => acc + attemptPercentage(attempt), 0) /
               finishedAttempts.length
             ).toFixed(2),
           )
@@ -59,7 +71,7 @@ export const dashboardService = {
       studySessionsLast7Days: sessionsLastWeek.length,
       totalStudyMinutesLast7Days: totalStudyMinutes,
       averageProductivity: avgProductivity,
-      quizAttemptsLast7Days: attemptsLastWeek.length,
+      quizAttemptsLast7Days: finishedAttempts.length,
       averageQuizScore: avgScore,
       unreadNotifications,
     };
