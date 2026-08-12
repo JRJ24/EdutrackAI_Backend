@@ -1,5 +1,6 @@
 import { prisma } from "../../database/prisma";
 import { HttpError } from "../../helpers/http-error";
+import { notificationsService } from "../notifications/notifications.service";
 
 export type AdaptiveTrigger =
   | "manual"
@@ -419,16 +420,13 @@ const syncPriorityNotification = async (userId: string, analysis: SubjectAnalysi
   });
 
   if (!duplicate) {
-    await prisma.notifications.create({
-      data: {
-        userId,
-        title: "Tu plan académico cambió",
-        message,
-        type: "adaptive_priority",
-        isRead: false,
-        scheduleAt: new Date(),
-        createdAt: new Date(),
-      },
+    await notificationsService.create({
+      userId,
+      title: "Tu plan académico cambió",
+      message,
+      type: "adaptive_priority",
+      isRead: false,
+      scheduleAt: new Date(),
     });
   }
 };
