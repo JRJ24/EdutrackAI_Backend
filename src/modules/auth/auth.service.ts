@@ -3,7 +3,7 @@ import { comparePassword, hashPassword } from "../../helpers/hashpassword";
 import { HttpError } from "../../helpers/http-error";
 import { signAuthToken } from "../../helpers/jwt";
 import { normalizeEmail } from "../../helpers/secure-fields";
-import { findInstitution, findProgram } from "../student-context/academic-catalog";
+import { findProgram } from "../student-context/academic-catalog";
 import { studentContextService } from "../student-context/student-context.service";
 import { LoginInput, RegisterInput } from "./auth.validation";
 
@@ -78,12 +78,14 @@ const register = async (data: RegisterInput) => {
     throw new HttpError(500, "Default student role is not configured");
   }
 
-  const institution = data.institutionKey
-    ? findInstitution(data.institutionKey)
-    : null;
-  const program = data.institutionKey && data.programKey
-    ? findProgram(data.institutionKey, data.programKey)
-    : null;
+  let institution: Awaited<ReturnType<typeof studentContextService.getCatalog>>[number] | null = null;
+  let program: Awaited<ReturnType<typeof studentContextService.getCatalog>>[number]["programs"][number] | null = null;
+
+  if (data.institutionKey && data.programKey) {
+    const catalog = await studentContextService.getCatalog();
+    institution = catalog.find((item) => item.key === data.institutionKey) ?? null;
+    program = institution?.programs.find((item) => item.key === data.programKey) ?? null;
+  }
 
   if ((data.institutionKey || data.programKey) && (!institution || !program)) {
     throw new HttpError(400, "Academic catalog selection is not valid");
@@ -117,7 +119,7 @@ const register = async (data: RegisterInput) => {
           programKey: program.key,
           programName: program.name,
           currentPeriod: 1,
-          sourceUrl: program.sourceUrl,
+          sourceUrl: program.sourceUrl || null,
           onboardingCompleted: false,
         },
       });
