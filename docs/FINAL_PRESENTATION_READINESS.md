@@ -17,4 +17,4 @@ The presentation branch is considered technically ready only when these rules ho
 
 Final browser verification should cover: Admin creates institution → career → subject → student registration sees that managed catalog → onboarding → Home/Pulse → explicit-topic copilot query → resources → Admin catalog sync/content authoring → run `pnpm db:seed` → student sees multiple published quizzes → attempt one → progress/Pulse update.
 
-Validation marker: presentation quiz seed pack.
+Validation marker: presentation quiz seed pack, build rechecked after seed changes.
