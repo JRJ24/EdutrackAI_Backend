@@ -10,6 +10,15 @@ const startOfDay = (date: Date) => {
   return copy;
 };
 
+const attemptPercentage = (attempt: { correctAnswers: number; totalQuestion: number; score: unknown }) => {
+  if (attempt.totalQuestion > 0) {
+    return (attempt.correctAnswers / attempt.totalQuestion) * 100;
+  }
+
+  const legacy = Number(attempt.score);
+  return Number.isFinite(legacy) ? Math.min(100, Math.max(0, legacy)) : 0;
+};
+
 export const dashboardService = {
   async getSummary(userId: string) {
     const now = new Date();
@@ -48,7 +57,7 @@ export const dashboardService = {
       finishedAttempts.length > 0
         ? Number(
             (
-              finishedAttempts.reduce((acc, a) => acc + Number(a.score), 0) /
+              finishedAttempts.reduce((acc, attempt) => acc + attemptPercentage(attempt), 0) /
               finishedAttempts.length
             ).toFixed(2),
           )
