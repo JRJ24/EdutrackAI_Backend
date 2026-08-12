@@ -58,6 +58,35 @@ const ensureQuestionExists = async (questionId: string) => {
   return question;
 };
 
+const deactivateQuizIfIncomplete = async (quizId: string) => {
+  const quiz = await prisma.quizzies.findUnique({
+    where: { id: quizId },
+    select: { isActive: true },
+  });
+
+  if (!quiz?.isActive) return;
+
+  const questions = await prisma.questions.findMany({
+    where: { quizId },
+    select: {
+      questionOptions: { select: { isCorrect: true } },
+    },
+  });
+
+  const ready = questions.length > 0 && questions.every(
+    (question) =>
+      question.questionOptions.length >= 2 &&
+      question.questionOptions.some((option) => option.isCorrect),
+  );
+
+  if (!ready) {
+    await prisma.quizzies.update({
+      where: { id: quizId },
+      data: { isActive: false },
+    });
+  }
+};
+
 const getQuestionsByQuiz = async (quizId: string, hideCorrect: boolean) => {
   await ensureQuizExists(quizId);
 
@@ -104,7 +133,7 @@ const getQuestionById = async (id: string, hideCorrect: boolean) => {
 const createQuestion = async (data: CreateQuestionInput) => {
   await ensureQuizExists(data.quizId);
 
-  return prisma.questions.create({
+  const result = await prisma.questions.create({
     data: {
       quizId: data.quizId,
       questionText: data.questionText,
@@ -115,10 +144,13 @@ const createQuestion = async (data: CreateQuestionInput) => {
     },
     select: questionSelect,
   });
+
+  await deactivateQuizIfIncomplete(data.quizId);
+  return result;
 };
 
 const updateQuestion = async (id: string, data: UpdateQuestionInput) => {
-  await ensureQuestionExists(id);
+  const question = await ensureQuestionExists(id);
 
   const updateData: Record<string, unknown> = {};
 
@@ -128,15 +160,20 @@ const updateQuestion = async (id: string, data: UpdateQuestionInput) => {
   if (data.topic !== undefined) updateData.topic = data.topic;
   if (data.difficulty !== undefined) updateData.difficulty = data.difficulty;
 
-  return prisma.questions.update({
+  const result = await prisma.questions.update({
     where: { id },
     data: updateData,
     select: questionSelect,
   });
+
+  await deactivateQuizIfIncomplete(question.quizId);
+  return result;
 };
 
 const removeQuestion = async (id: string) => {
+  const question = await ensureQuestionExists(id);
   await prisma.questions.delete({ where: { id } });
+  await deactivateQuizIfIncomplete(question.quizId);
 };
 
 const getOptionsByQuestion = async (questionId: string) => {
@@ -149,9 +186,9 @@ const getOptionsByQuestion = async (questionId: string) => {
 };
 
 const createOption = async (data: CreateQuestionOptionInput) => {
-  await ensureQuestionExists(data.questionId);
+  const question = await ensureQuestionExists(data.questionId);
 
-  return prisma.questionOptions.create({
+  const result = await prisma.questionOptions.create({
     data: {
       questionId: data.questionId,
       optionText: data.optionText,
@@ -164,12 +201,18 @@ const createOption = async (data: CreateQuestionOptionInput) => {
       isCorrect: true,
     },
   });
+
+  await deactivateQuizIfIncomplete(question.quizId);
+  return result;
 };
 
 const updateOption = async (id: string, data: UpdateQuestionOptionInput) => {
   const existing = await prisma.questionOptions.findUnique({
     where: { id },
-    select: { id: true },
+    select: {
+      id: true,
+      question: { select: { quizId: true } },
+    },
   });
 
   if (!existing) {
@@ -181,7 +224,7 @@ const updateOption = async (id: string, data: UpdateQuestionOptionInput) => {
   if (data.optionText !== undefined) updateData.optionText = data.optionText;
   if (data.isCorrect !== undefined) updateData.isCorrect = data.isCorrect;
 
-  return prisma.questionOptions.update({
+  const result = await prisma.questionOptions.update({
     where: { id },
     data: updateData,
     select: {
@@ -191,10 +234,25 @@ const updateOption = async (id: string, data: UpdateQuestionOptionInput) => {
       isCorrect: true,
     },
   });
+
+  await deactivateQuizIfIncomplete(existing.question.quizId);
+  return result;
 };
 
 const removeOption = async (id: string) => {
+  const existing = await prisma.questionOptions.findUnique({
+    where: { id },
+    select: {
+      question: { select: { quizId: true } },
+    },
+  });
+
+  if (!existing) {
+    throw new HttpError(404, "Question option not found");
+  }
+
   await prisma.questionOptions.delete({ where: { id } });
+  await deactivateQuizIfIncomplete(existing.question.quizId);
 };
 
 export const questionsService = {
