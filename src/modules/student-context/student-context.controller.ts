@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { prisma } from "../../database/prisma";
 import { getErrorResponse } from "../../helpers/http-error";
 import { studentContextService } from "./student-context.service";
 
@@ -7,12 +8,48 @@ const requireUser = (req: Request) => {
   return req.user;
 };
 
-const getCatalog = async (_req: Request, res: Response) => {
+const normalizeText = (value: string) =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\b(?:tecnologo|tecnico superior|en|de|la|el)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const careerMatchScore = (career: string, programName: string) => {
+  const left = normalizeText(career);
+  const right = normalizeText(programName);
+  if (!left || !right) return 0;
+  if (left === right) return 3;
+  if (left.includes(right) || right.includes(left)) return 2;
+
+  const leftTokens = new Set(left.split(" "));
+  const rightTokens = right.split(" ");
+  const overlap = rightTokens.filter((token) => leftTokens.has(token)).length;
+  return overlap >= Math.max(1, Math.ceil(rightTokens.length / 2)) ? 1 : 0;
+};
+
+const getCatalog = async (req: Request, res: Response) => {
   try {
+    const user = requireUser(req);
+    const profile = await prisma.user.findUnique({
+      where: { id: user.userId },
+      select: { career: true },
+    });
+    const career = profile?.career?.trim() ?? "";
+
+    const data = studentContextService.getCatalog().map((institution) => ({
+      ...institution,
+      programs: [...institution.programs].sort(
+        (a, b) => careerMatchScore(career, b.name) - careerMatchScore(career, a.name),
+      ),
+    }));
+
     return res.status(200).json({
       ok: true,
       message: "Academic catalog fetched successfully",
-      data: studentContextService.getCatalog(),
+      data,
     });
   } catch (error) {
     const result = getErrorResponse(error, "Failed to fetch academic catalog");
