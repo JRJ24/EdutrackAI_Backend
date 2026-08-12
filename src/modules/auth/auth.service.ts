@@ -80,7 +80,8 @@ const register = async (data: RegisterInput) => {
   }
 
   const password = await hashPassword(data.password);
-  const career = program?.name ?? data.career;
+  const career = program?.name ?? data.career.trim();
+  const manualInstitutionName = data.institutionName?.trim() || null;
 
   const user = await prisma.$transaction(async (tx) => {
     const created = await tx.user.create({
@@ -107,6 +108,19 @@ const register = async (data: RegisterInput) => {
           programName: program.name,
           currentPeriod: 1,
           sourceUrl: program.sourceUrl,
+          onboardingCompleted: false,
+        },
+      });
+    } else if (manualInstitutionName) {
+      await tx.studentContext.create({
+        data: {
+          userId: created.id,
+          institutionKey: "custom",
+          institutionName: manualInstitutionName,
+          programKey: "custom",
+          programName: career,
+          currentPeriod: 1,
+          sourceUrl: null,
           onboardingCompleted: false,
         },
       });
