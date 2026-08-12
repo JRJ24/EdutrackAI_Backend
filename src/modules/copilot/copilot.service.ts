@@ -13,6 +13,14 @@ const suggestedPrompts = [
 const daysUntil = (value: Date) =>
   Math.max(0, Math.ceil((value.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
 
+const normalizeForMatch = (value: string) =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+
 const buildPulse = async (userId: string) => {
   const [overview, summary, streak, context, assignments] = await Promise.all([
     adaptiveEngineService.getOverview(userId),
@@ -152,12 +160,40 @@ const extractRequestedMinutes = (message: string) => {
   return Number.isFinite(value) ? Math.min(180, Math.max(10, value)) : null;
 };
 
+const removeSubjectFromTopic = (value: string, subjectName?: string | null) => {
+  if (!subjectName) return value;
+  const normalizedValue = normalizeForMatch(value);
+  const normalizedSubject = normalizeForMatch(subjectName);
+  const index = normalizedValue.indexOf(normalizedSubject);
+  if (index < 0) return value;
+
+  // This is intentionally approximate: it is used only to prevent a full
+  // subject name from becoming a resource query. The direct user topic stays
+  // before the subject phrase in normal questions such as "MAUI en <materia>".
+  const words = value.trim().split(/\s+/);
+  const subjectWords = subjectName.trim().split(/\s+/).length;
+  const normalizedWords = words.map(normalizeForMatch);
+  const subjectFirstToken = normalizeForMatch(subjectName.trim().split(/\s+/)[0] ?? "");
+  const start = normalizedWords.findIndex((word) => word === subjectFirstToken);
+
+  if (start >= 0) {
+    const before = words.slice(0, Math.max(0, start - 1)).join(" ");
+    const after = words.slice(start + subjectWords).join(" ");
+    return `${before} ${after}`.trim();
+  }
+
+  return value;
+};
+
 const normalizeTopic = (value: string, subjectName?: string | null) => {
-  let topic = value
+  let topic = removeSubjectFromTopic(value, subjectName)
     .trim()
+    .replace(/^["“”']+|["“”']+$/g, "")
     .replace(/[¿?!.]+$/g, "")
     .replace(/^(?:hoy|ahora|esta semana)\s*/i, "")
-    .replace(/^(?:en|sobre|de)\s+/i, "")
+    .replace(/^(?:el tema|tema)\s+/i, "")
+    .replace(/^(?:en|sobre|de|para)\s+/i, "")
+    .replace(/\s+(?:en|de|para)\s*$/i, "")
     .trim();
 
   if (!topic) return null;
@@ -166,8 +202,8 @@ const normalizeTopic = (value: string, subjectName?: string | null) => {
   }
 
   if (subjectName) {
-    const normalizedTopic = topic.toLowerCase();
-    const normalizedSubject = subjectName.toLowerCase();
+    const normalizedTopic = normalizeForMatch(topic);
+    const normalizedSubject = normalizeForMatch(subjectName);
     if (normalizedTopic === normalizedSubject) return null;
     if (normalizedTopic === `la materia ${normalizedSubject}`) return null;
   }
@@ -176,22 +212,42 @@ const normalizeTopic = (value: string, subjectName?: string | null) => {
 };
 
 const extractTopic = (message: string, subjectName?: string | null) => {
-  const match = message.match(
-    /(?:no entiendo|ayúdame con|ayudame con|explícame|explicame|repasar|practicar)\s+(.+)/i,
-  );
-  return match?.[1] ? normalizeTopic(match[1], subjectName) : null;
+  const patterns = [
+    /(?:no\s+entiendo|ayúdame\s+con|ayudame\s+con|explícame|explicame)\s+(?:el\s+tema\s+)?(.+)/i,
+    /(?:quiero\s+repasar|debo\s+repasar|repasar|practicar)\s+(?:el\s+tema\s+)?(.+)/i,
+    /(?:sobre\s+el\s+tema|sobre|tema)\s+["“]?(.+?)["”]?(?:\?|$)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    if (!match?.[1]) continue;
+    const topic = normalizeTopic(match[1], subjectName);
+    if (topic) return topic;
+  }
+
+  return null;
+};
+
+const isConcreteActivityTopic = (value?: string | null) => {
+  if (!value?.trim()) return false;
+  const normalized = normalizeForMatch(value);
+  if (/^(?:tema|repaso|general)$/.test(normalized)) return false;
+  if (/\b(?:presentacion|proyecto|entrega|parcial|examen|evaluacion|tarea|fecha|final)\b/.test(normalized)) {
+    return false;
+  }
+  return true;
 };
 
 const ask = async (userId: string, input: CopilotAskInput) => {
   const pulse = await buildPulse(userId);
-  const normalized = input.message.toLowerCase();
+  const normalized = normalizeForMatch(input.message);
   const requestedMinutes = extractRequestedMinutes(input.message);
   const action = pulse.action;
   const mentionedSubject = pulse.activeSubjects.find((item) =>
-    normalized.includes(item.subject.name.toLowerCase()),
+    normalized.includes(normalizeForMatch(item.subject.name)),
   ) ?? null;
 
-  if (/pendiente|qué tengo|que tengo|agenda|examen|evaluaci/.test(normalized)) {
+  if (/pendiente|que tengo|agenda|examen|evaluaci/.test(normalized)) {
     const parts: string[] = [];
     if (action) parts.push(`Tu siguiente acción es ${action.title} en ${action.subjectName}.`);
     if (pulse.upcomingEvaluation) {
@@ -228,10 +284,12 @@ const ask = async (userId: string, input: CopilotAskInput) => {
     };
   }
 
-  if (/no entiendo|ayúdame|ayudame|explícame|explicame|repasar|practicar/.test(normalized)) {
+  if (/no entiendo|ayudame|explicame|repasar|practicar/.test(normalized)) {
     const subjectId = mentionedSubject?.subject.id ?? action?.subjectId ?? pulse.activeSubjects[0]?.subject.id ?? null;
     const subjectName = mentionedSubject?.subject.name ?? action?.subjectName ?? pulse.activeSubjects[0]?.subject.name ?? null;
-    let effectiveTopic = extractTopic(input.message, subjectName) || action?.topic || null;
+
+    const explicitTopic = extractTopic(input.message, subjectName);
+    let effectiveTopic = explicitTopic;
 
     if (!effectiveTopic && subjectId) {
       const recentContext = await prisma.studentAcademicItem.findFirst({
@@ -246,6 +304,10 @@ const ask = async (userId: string, input: CopilotAskInput) => {
       effectiveTopic = recentContext?.topic ?? null;
     }
 
+    if (!effectiveTopic && isConcreteActivityTopic(action?.topic)) {
+      effectiveTopic = action?.topic ?? null;
+    }
+
     if (!subjectName) {
       return {
         answer: "Primero configura tus materias actuales para que pueda ayudarte con el contenido correcto.",
@@ -256,7 +318,7 @@ const ask = async (userId: string, input: CopilotAskInput) => {
 
     if (!effectiveTopic) {
       return {
-        answer: `Sí puedo ayudarte con ${subjectName}, pero todavía no tengo registrado el tema concreto que estás viendo. Escríbeme el tema —por ejemplo “MAUI”, “normalización” o “derivadas”— y buscaré apoyo dentro de ese contexto, no una búsqueda genérica de la materia.`,
+        answer: `Sé que estás hablando de ${subjectName}, pero me falta el tema concreto. Escríbeme algo como “No entiendo MAUI” o “Quiero repasar navegación” y buscaré apoyo para ese tema, no para una entrega o para el nombre completo de la materia.`,
         action: null,
         resourceDiscovery: null,
         suggestedPrompts,
@@ -265,7 +327,7 @@ const ask = async (userId: string, input: CopilotAskInput) => {
 
     return {
       answer: `Vamos con ${effectiveTopic} en ${subjectName}. Primero revisa una explicación o recurso corto del tema y después usa una práctica para comprobar qué quedó claro.`,
-      action,
+      action: explicitTopic ? null : action,
       resourceDiscovery: subjectId
         ? { subjectId, topic: effectiveTopic }
         : null,
