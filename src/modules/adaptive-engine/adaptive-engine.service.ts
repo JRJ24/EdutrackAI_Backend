@@ -53,6 +53,19 @@ const toNumber = (value: unknown): number | null => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
+const quizAttemptPercentage = (attempt: {
+  score: unknown;
+  correctAnswers: number;
+  totalQuestion: number;
+} | null) => {
+  if (!attempt) return null;
+  if (attempt.totalQuestion > 0) {
+    return clamp((attempt.correctAnswers / attempt.totalQuestion) * 100, 0, 100);
+  }
+  const legacy = toNumber(attempt.score);
+  return legacy === null ? null : clamp(legacy, 0, 100);
+};
+
 const getRiskLevel = (score: number): RiskLevel => {
   if (score >= 70) return "high";
   if (score >= 50) return "attention";
@@ -166,6 +179,8 @@ const analyzeSubject = async (
       },
       select: {
         score: true,
+        correctAnswers: true,
+        totalQuestion: true,
         finishedAt: true,
         studenAnswers: {
           where: { isCorrect: false },
@@ -185,7 +200,7 @@ const analyzeSubject = async (
     ? gradeValues.reduce((sum, value) => sum + value, 0) / gradeValues.length
     : null;
 
-  const recentQuizScore = toNumber(lastQuiz?.score);
+  const recentQuizScore = quizAttemptPercentage(lastQuiz);
   const daysWithoutStudy = lastSession
     ? Math.max(0, Math.floor((now.getTime() - lastSession.endedAt.getTime()) / DAY_MS))
     : null;
