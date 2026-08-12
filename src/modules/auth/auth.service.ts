@@ -4,9 +4,19 @@ import { HttpError } from "../../helpers/http-error";
 import { signAuthToken } from "../../helpers/jwt";
 import { normalizeEmail } from "../../helpers/secure-fields";
 import { findInstitution, findProgram } from "../student-context/academic-catalog";
+import { studentContextService } from "../student-context/student-context.service";
 import { LoginInput, RegisterInput } from "./auth.validation";
 
 const DEFAULT_ROLE_NAME = "student";
+const DEMO_ACCOUNT_EMAIL = normalizeEmail(process.env.DEMO_ACCOUNT_EMAIL ?? "prueba@gmail.com");
+const DEMO_SUBJECT_KEYS = [
+  "TDS-011",
+  "TDS-010",
+  "TDS-302",
+  "TDS-601",
+  "ING-110",
+  "TDS-008",
+];
 
 const userSelect = {
   id: true,
@@ -132,6 +142,33 @@ const register = async (data: RegisterInput) => {
   return buildAuthResponse(user);
 };
 
+const ensureDemoAccountReady = async (userId: string, email: string, roleName: string) => {
+  if (email !== DEMO_ACCOUNT_EMAIL || roleName.toLowerCase() === "admin") return;
+
+  const context = await prisma.studentContext.findUnique({
+    where: { userId },
+    select: { onboardingCompleted: true },
+  });
+
+  if (context?.onboardingCompleted) return;
+
+  const program = findProgram("itla", "itla-software");
+  if (!program) return;
+
+  const selectedSubjectKeys = DEMO_SUBJECT_KEYS.filter((key) =>
+    program.subjects.some((subject) => subject.key === key),
+  );
+
+  if (selectedSubjectKeys.length === 0) return;
+
+  await studentContextService.applyCatalog(userId, {
+    institutionKey: "itla",
+    programKey: "itla-software",
+    currentPeriod: 7,
+    selectedSubjectKeys,
+  });
+};
+
 const login = async (data: LoginInput) => {
   const email = normalizeEmail(data.email);
 
@@ -157,6 +194,8 @@ const login = async (data: LoginInput) => {
   if (!isPasswordValid) {
     throw new HttpError(401, "Invalid credentials");
   }
+
+  await ensureDemoAccountReady(user.id, email, user.role.name);
 
   const updatedUser = await prisma.user.update({
     where: { id: user.id },
