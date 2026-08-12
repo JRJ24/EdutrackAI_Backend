@@ -7,6 +7,9 @@ import {
   applyCatalogSchema,
   customContextSchema,
   customSubjectSchema,
+  managedCatalogSubjectSchema,
+  managedInstitutionSchema,
+  managedProgramSchema,
   updateMySubjectSchema,
 } from "./student-context.validation";
 
@@ -21,12 +24,51 @@ const assignmentParamsSchema = z.object({
   assignmentId: z.string().uuid(),
 });
 
+const managedInstitutionParamsSchema = z.object({
+  institutionId: z.string().uuid(),
+});
+
+const managedProgramParamsSchema = z.object({
+  programId: z.string().uuid(),
+});
+
 // Public, read-only curriculum data is used by registration before a session exists.
 router.get("/catalog", studentContextController.getCatalog);
 router.get(
   "/catalog/:institutionKey/:programKey",
   validateParams(programParamsSchema),
   studentContextController.getProgram,
+);
+
+// Admin-managed catalog: institutions -> programs -> subjects.
+router.get(
+  "/catalog/manage",
+  requireAuth,
+  requireRole("admin"),
+  studentContextController.getManagedCatalog,
+);
+router.post(
+  "/catalog/institutions",
+  requireAuth,
+  requireRole("admin"),
+  validateBody(managedInstitutionSchema),
+  studentContextController.createManagedInstitution,
+);
+router.post(
+  "/catalog/institutions/:institutionId/programs",
+  requireAuth,
+  requireRole("admin"),
+  validateParams(managedInstitutionParamsSchema),
+  validateBody(managedProgramSchema),
+  studentContextController.createManagedProgram,
+);
+router.post(
+  "/catalog/programs/:programId/subjects",
+  requireAuth,
+  requireRole("admin"),
+  validateParams(managedProgramParamsSchema),
+  validateBody(managedCatalogSubjectSchema),
+  studentContextController.createManagedCatalogSubject,
 );
 router.post(
   "/catalog/sync",
