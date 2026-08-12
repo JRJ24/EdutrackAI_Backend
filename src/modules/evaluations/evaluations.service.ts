@@ -2,6 +2,7 @@ import { Prisma } from "../../../generated/prisma/client";
 import { prisma } from "../../database/prisma";
 import { HttpError } from "../../helpers/http-error";
 import { triggerAdaptiveRecalculation } from "../adaptive-engine/adaptive-engine.events";
+import { proactiveAlertsService } from "../notifications/proactive-alerts.service";
 import type { CreateEvaluationInput, UpdateEvaluationInput } from "./evaluations.validation";
 
 const evaluationSelect = {
@@ -32,6 +33,20 @@ const getVisibleSubjectIds = async (userId: string) => {
     select: { subjectId: true },
   });
   return links.map((link) => link.subjectId);
+};
+
+const notifyAffectedUsers = async (subjectId: string) => {
+  const users = await prisma.userSubject.findMany({
+    where: { subjectId, status: "active" },
+    select: { userId: true },
+  });
+
+  for (const user of users) {
+    triggerAdaptiveRecalculation(user.userId, "evaluation_changed");
+    void proactiveAlertsService.runForUser(user.userId).catch((error) => {
+      console.error("[proactive-alerts] evaluation trigger failed:", error);
+    });
+  }
 };
 
 const getAll = async (requestingUserId: string, isAdmin: boolean) => {
@@ -90,11 +105,7 @@ const create = async (data: CreateEvaluationInput, createdBy: string) => {
     select: evaluationSelect,
   });
 
-  const users = await prisma.userSubject.findMany({
-    where: { subjectId: data.subjectId },
-    select: { userId: true },
-  });
-  for (const user of users) triggerAdaptiveRecalculation(user.userId, "evaluation_changed");
+  await notifyAffectedUsers(data.subjectId);
   return evaluation;
 };
 
@@ -119,11 +130,7 @@ const update = async (id: string, data: UpdateEvaluationInput) => {
     select: evaluationSelect,
   });
 
-  const users = await prisma.userSubject.findMany({
-    where: { subjectId: existing.subjectId },
-    select: { userId: true },
-  });
-  for (const user of users) triggerAdaptiveRecalculation(user.userId, "evaluation_changed");
+  await notifyAffectedUsers(existing.subjectId);
   return evaluation;
 };
 
@@ -135,11 +142,7 @@ const remove = async (id: string) => {
   if (!existing) throw new HttpError(404, "Evaluation not found");
 
   await prisma.evaluation.update({ where: { id }, data: { isActive: false } });
-  const users = await prisma.userSubject.findMany({
-    where: { subjectId: existing.subjectId },
-    select: { userId: true },
-  });
-  for (const user of users) triggerAdaptiveRecalculation(user.userId, "evaluation_changed");
+  await notifyAffectedUsers(existing.subjectId);
 };
 
 export const evaluationsService = {

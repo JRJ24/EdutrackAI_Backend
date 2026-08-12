@@ -96,12 +96,59 @@ const ensureQuizExists = async (quizId: string, allowInactive = false) => {
   return quiz;
 };
 
+const getQuizReadiness = async (quizId: string) => {
+  const questions = await prisma.questions.findMany({
+    where: { quizId },
+    select: {
+      id: true,
+      questionOptions: {
+        select: { isCorrect: true },
+      },
+    },
+  });
+
+  const incompleteQuestions = questions.filter(
+    (question) =>
+      question.questionOptions.length < 2 ||
+      !question.questionOptions.some((option) => option.isCorrect),
+  );
+
+  return {
+    ready: questions.length > 0 && incompleteQuestions.length === 0,
+    questionCount: questions.length,
+    incompleteQuestionCount: incompleteQuestions.length,
+  };
+};
+
+const assertQuizReady = async (quizId: string) => {
+  const readiness = await getQuizReadiness(quizId);
+  if (!readiness.ready) {
+    throw new HttpError(
+      409,
+      readiness.questionCount === 0
+        ? "Quiz must have at least one question before publishing"
+        : "Every quiz question needs at least two options and one correct answer before publishing",
+    );
+  }
+  return readiness;
+};
+
+const filterReadyQuizzes = async <T extends { id: string }>(quizzes: T[]) => {
+  const readiness = await Promise.all(
+    quizzes.map(async (quiz) => ({ id: quiz.id, ready: (await getQuizReadiness(quiz.id)).ready })),
+  );
+  const readyIds = new Set(readiness.filter((item) => item.ready).map((item) => item.id));
+  return quizzes.filter((quiz) => readyIds.has(quiz.id));
+};
+
 const getAll = async (isAdmin: boolean) => {
-  return prisma.quizzies.findMany({
+  const quizzes = await prisma.quizzies.findMany({
     where: isAdmin ? {} : { isActive: true },
     select: quizziesSelect,
     orderBy: { createAt: "desc" },
   });
+
+  return isAdmin ? quizzes : filterReadyQuizzes(quizzes);
 };
 
 const getById = async (id: string, isAdmin: boolean) => {
@@ -114,21 +161,28 @@ const getById = async (id: string, isAdmin: boolean) => {
     throw new HttpError(404, "Quiz not found");
   }
 
+  if (!isAdmin) await assertQuizReady(id);
   return quiz;
 };
 
 const getBySubject = async (subjectId: string, isAdmin: boolean) => {
   await ensureSubjectActive(subjectId);
 
-  return prisma.quizzies.findMany({
+  const quizzes = await prisma.quizzies.findMany({
     where: { subjectId, ...(isAdmin ? {} : { isActive: true }) },
     select: quizziesSelect,
     orderBy: { createAt: "desc" },
   });
+
+  return isAdmin ? quizzes : filterReadyQuizzes(quizzes);
 };
 
 const create = async (data: CreateQuizziesInput, createdById: string) => {
   await ensureSubjectActive(data.subjectId);
+
+  if (data.isActive === true) {
+    throw new HttpError(400, "Create the quiz as a draft, add its questions and options, then publish it");
+  }
 
   return prisma.quizzies.create({
     data: {
@@ -137,7 +191,7 @@ const create = async (data: CreateQuizziesInput, createdById: string) => {
       description: data.description,
       difficulty: data.difficulty,
       timeLimitMinutes: data.timeLimitMinutes,
-      isActive: data.isActive ?? true,
+      isActive: false,
       createBy: createdById,
       createAt: new Date(),
     },
@@ -147,6 +201,10 @@ const create = async (data: CreateQuizziesInput, createdById: string) => {
 
 const update = async (id: string, data: UpdateQuizziesInput) => {
   await ensureQuizExists(id, true);
+
+  if (data.isActive === true) {
+    await assertQuizReady(id);
+  }
 
   const updateData: Record<string, unknown> = {};
 
@@ -175,18 +233,12 @@ const remove = async (id: string) => {
 
 const startAttempt = async (quizId: string, userId: string) => {
   await ensureQuizExists(quizId);
+  const readiness = await assertQuizReady(quizId);
 
-  const [questionCount, existingAttempt] = await Promise.all([
-    prisma.questions.count({ where: { quizId } }),
-    prisma.quizAttempts.findFirst({
-      where: { quizId, userId, finishedAt: OPEN_ATTEMPT_DATE },
-      select: attemptSummarySelect,
-    }),
-  ]);
-
-  if (questionCount === 0) {
-    throw new HttpError(400, "Quiz has no questions");
-  }
+  const existingAttempt = await prisma.quizAttempts.findFirst({
+    where: { quizId, userId, finishedAt: OPEN_ATTEMPT_DATE },
+    select: attemptSummarySelect,
+  });
 
   if (existingAttempt) {
     return {
@@ -202,7 +254,7 @@ const startAttempt = async (quizId: string, userId: string) => {
       quizId,
       userId,
       score: new Prisma.Decimal(0),
-      totalQuestion: questionCount,
+      totalQuestion: readiness.questionCount,
       correctAnswers: 0,
       startedAt: new Date(),
       finishedAt: OPEN_ATTEMPT_DATE,
@@ -413,10 +465,12 @@ const finishAttempt = async (attemptId: string, userId: string) => {
     const correctQuestionIds = new Set(
       answers.filter((answer) => answer.isCorrect).map((answer) => answer.questionId),
     );
-    const score = questions.reduce(
+    const totalPoints = questions.reduce((total, question) => total + question.points, 0);
+    const earnedPoints = questions.reduce(
       (total, question) => total + (correctQuestionIds.has(question.id) ? question.points : 0),
       0,
     );
+    const scorePercent = totalPoints > 0 ? (earnedPoints / totalPoints) * 100 : 0;
 
     await tx.quizAttempts.update({
       where: { id: attemptId },
@@ -424,7 +478,7 @@ const finishAttempt = async (attemptId: string, userId: string) => {
         finishedAt: new Date(),
         correctAnswers,
         totalQuestion: questions.length,
-        score: new Prisma.Decimal(score),
+        score: new Prisma.Decimal(scorePercent.toFixed(2)),
       },
     });
   });
@@ -458,4 +512,5 @@ export const quizziesService = {
   finishAttempt,
   getAttemptById,
   getAttemptsByUser,
+  getQuizReadiness,
 };

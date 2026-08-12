@@ -1,5 +1,6 @@
 import { prisma } from "../../database/prisma";
 import { HttpError } from "../../helpers/http-error";
+import { notificationsService } from "../notifications/notifications.service";
 
 export type AdaptiveTrigger =
   | "manual"
@@ -51,6 +52,19 @@ const toNumber = (value: unknown): number | null => {
   if (value === null || value === undefined) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+};
+
+const quizAttemptPercentage = (attempt: {
+  score: unknown;
+  correctAnswers: number;
+  totalQuestion: number;
+} | null) => {
+  if (!attempt) return null;
+  if (attempt.totalQuestion > 0) {
+    return clamp((attempt.correctAnswers / attempt.totalQuestion) * 100, 0, 100);
+  }
+  const legacy = toNumber(attempt.score);
+  return legacy === null ? null : clamp(legacy, 0, 100);
 };
 
 const getRiskLevel = (score: number): RiskLevel => {
@@ -166,6 +180,8 @@ const analyzeSubject = async (
       },
       select: {
         score: true,
+        correctAnswers: true,
+        totalQuestion: true,
         finishedAt: true,
         studenAnswers: {
           where: { isCorrect: false },
@@ -185,7 +201,7 @@ const analyzeSubject = async (
     ? gradeValues.reduce((sum, value) => sum + value, 0) / gradeValues.length
     : null;
 
-  const recentQuizScore = toNumber(lastQuiz?.score);
+  const recentQuizScore = quizAttemptPercentage(lastQuiz);
   const daysWithoutStudy = lastSession
     ? Math.max(0, Math.floor((now.getTime() - lastSession.endedAt.getTime()) / DAY_MS))
     : null;
@@ -404,16 +420,13 @@ const syncPriorityNotification = async (userId: string, analysis: SubjectAnalysi
   });
 
   if (!duplicate) {
-    await prisma.notifications.create({
-      data: {
-        userId,
-        title: "Tu plan académico cambió",
-        message,
-        type: "adaptive_priority",
-        isRead: false,
-        scheduleAt: new Date(),
-        createdAt: new Date(),
-      },
+    await notificationsService.create({
+      userId,
+      title: "Tu plan académico cambió",
+      message,
+      type: "adaptive_priority",
+      isRead: false,
+      scheduleAt: new Date(),
     });
   }
 };

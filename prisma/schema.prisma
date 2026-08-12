@@ -27,10 +27,12 @@ model User {
   roleId String
   role   Roles  @relation(fields: [roleId], references: [id])
 
-  academicProfile  AcademicProfile[]
-  subjectUser      UserSubject[]
-  quizzies         Quizzies[]
-  quizziesAttempts QuizAttempts[]
+  academicProfile      AcademicProfile[]
+  studentContext       StudentContext?
+  studentAcademicItems StudentAcademicItem[]
+  subjectUser          UserSubject[]
+  quizzies             Quizzies[]
+  quizziesAttempts     QuizAttempts[]
 
   createdAt       DateTime @default(now())
   updateAt        DateTime @updatedAt
@@ -80,6 +82,45 @@ model AcademicProfile {
   @@schema("users")
 }
 
+model StudentContext {
+  id                  String   @id @default(uuid())
+  userId              String   @unique @map("user_id")
+  institutionKey      String   @map("institution_key")
+  institutionName     String   @map("institution_name")
+  programKey          String   @map("program_key")
+  programName         String   @map("program_name")
+  currentPeriod       Int      @map("current_period")
+  sourceUrl           String?  @map("source_url")
+  onboardingCompleted Boolean  @default(false) @map("onboarding_completed")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updateAt            DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@schema("users")
+}
+
+model StudentAcademicItem {
+  id          String    @id @default(uuid())
+  userId      String    @map("user_id")
+  subjectId   String    @map("subject_id")
+  itemType    String    @map("item_type")
+  title       String
+  description String?
+  topic       String?
+  url         String?
+  scheduledAt DateTime? @map("scheduled_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updateAt    DateTime  @updatedAt @map("updated_at")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@index([userId, itemType, scheduledAt])
+  @@index([userId, subjectId])
+  @@schema("academics")
+}
+
 model Subject {
   id          String  @id @default(uuid())
   name        String
@@ -90,30 +131,35 @@ model Subject {
   subject  UserSubject[]
   quizzies Quizzies[]
 
-  createdAt       DateTime @default(now())
-  updateAt        DateTime @updatedAt
-  grades          Grades[]
-  studySessions   StudySessions[]
-  resouces        Resouces[]
-  recommendations Recommendations[]
-  evaluations     Evaluation[]
-  studyPlanActivities StudyPlanActivity[]
-  riskSnapshots       RiskSnapshot[]
+  createdAt            DateTime @default(now())
+  updateAt             DateTime @updatedAt
+  grades               Grades[]
+  studySessions        StudySessions[]
+  resouces             Resouces[]
+  recommendations      Recommendations[]
+  evaluations          Evaluation[]
+  studentAcademicItems StudentAcademicItem[]
+  studyPlanActivities  StudyPlanActivity[]
+  riskSnapshots        RiskSnapshot[]
 
   @@schema("system")
 }
 
 model UserSubject {
-  id              String @id @default(uuid())
-  userId          String @map("user_id")
-  subjectId       String @map("subject_id")
-  currentAverage  String @map("current_average")
-  difficultyLevel String @map("difficulty_level")
-  status          String
+  id               String  @id @default(uuid())
+  userId           String  @map("user_id")
+  subjectId        String  @map("subject_id")
+  currentAverage   String  @map("current_average")
+  difficultyLevel  String  @map("difficulty_level")
+  status           String
+  curriculumCode   String? @map("curriculum_code")
+  curriculumPeriod Int?    @map("curriculum_period")
+  source           String  @default("manual")
 
   user    User    @relation(fields: [userId], references: [id])
   subject Subject @relation(fields: [subjectId], references: [id])
 
+  @@index([userId, status])
   @@schema("users")
 }
 

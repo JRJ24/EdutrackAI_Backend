@@ -10,6 +10,20 @@ export const registerSchema = z.object({
   email: z.string().trim().email(),
   password: passwordSchema,
   avatarUrl: z.string().trim().url().optional(),
+  institutionKey: z.string().trim().min(1).optional(),
+  programKey: z.string().trim().min(1).optional(),
+  institutionName: z.string().trim().min(1).optional(),
+}).superRefine((value, ctx) => {
+  const hasInstitution = Boolean(value.institutionKey);
+  const hasProgram = Boolean(value.programKey);
+
+  if (hasInstitution !== hasProgram) {
+    ctx.addIssue({
+      code: "custom",
+      path: [hasInstitution ? "programKey" : "institutionKey"],
+      message: "Institution and program must be selected together",
+    });
+  }
 });
 
 export const loginSchema = z.object({
