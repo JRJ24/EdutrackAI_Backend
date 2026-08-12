@@ -1,8 +1,10 @@
+import jwt, { type JwtPayload } from "jsonwebtoken";
 import { prisma } from "../../database/prisma";
 import { comparePassword, hashPassword } from "../../helpers/hashpassword";
 import { HttpError } from "../../helpers/http-error";
 import { signAuthToken } from "../../helpers/jwt";
 import { normalizeEmail } from "../../helpers/secure-fields";
+import { notificationEmailService } from "../notifications/notification-email.service";
 import { findProgram } from "../student-context/academic-catalog";
 import { studentContextService } from "../student-context/student-context.service";
 import { LoginInput, RegisterInput } from "./auth.validation";
@@ -47,6 +49,82 @@ const buildAuthResponse = (user: any) => ({
     role: user.role.name,
   }),
 });
+
+const jwtSecret = () => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error("JWT_SECRET is missing");
+  return secret;
+};
+
+const backendPublicUrl = () =>
+  (process.env.BACKEND_PUBLIC_URL?.trim() || `http://localhost:${process.env.PORT || 5000}`).replace(/\/$/, "");
+
+const sendEmailVerification = async (userId: string) => {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, email: true, emailVerified: true, isActive: true },
+  });
+
+  if (!user?.isActive) throw new HttpError(404, "Active user not found");
+  if (user.emailVerified) return { status: "already_verified" as const };
+
+  const token = jwt.sign(
+    {
+      purpose: "email_verification",
+      userId: user.id,
+      email: user.email,
+    },
+    jwtSecret(),
+    { expiresIn: "2h" },
+  );
+
+  const verificationUrl = `${backendPublicUrl()}/api/auth/verify-email?token=${encodeURIComponent(token)}`;
+  const delivery = await notificationEmailService.sendVerificationEmail(user.id, verificationUrl);
+  return { status: delivery.status, reason: delivery.reason };
+};
+
+const verifyEmail = async (token: string) => {
+  if (!token) throw new HttpError(400, "Verification token is required");
+
+  let payload: JwtPayload;
+  try {
+    const decoded = jwt.verify(token, jwtSecret());
+    if (typeof decoded === "string") throw new Error("Invalid token payload");
+    payload = decoded;
+  } catch (_error) {
+    throw new HttpError(400, "Verification link is invalid or expired");
+  }
+
+  if (
+    payload.purpose !== "email_verification" ||
+    typeof payload.userId !== "string" ||
+    typeof payload.email !== "string"
+  ) {
+    throw new HttpError(400, "Verification link is invalid");
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: payload.userId },
+    select: { id: true, email: true, firstName: true, isActive: true, emailVerified: true },
+  });
+
+  if (!user?.isActive || normalizeEmail(user.email) !== normalizeEmail(payload.email)) {
+    throw new HttpError(400, "Verification link no longer matches this account");
+  }
+
+  if (!user.emailVerified) {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { emailVerified: true },
+    });
+  }
+
+  return {
+    firstName: user.firstName,
+    email: user.email,
+    emailVerified: true,
+  };
+};
 
 const register = async (data: RegisterInput) => {
   const email = normalizeEmail(data.email);
@@ -141,6 +219,10 @@ const register = async (data: RegisterInput) => {
     return created;
   });
 
+  void sendEmailVerification(user.id).catch((error) => {
+    console.error("[email-verification] registration delivery failed:", error);
+  });
+
   return buildAuthResponse(user);
 };
 
@@ -205,10 +287,18 @@ const login = async (data: LoginInput) => {
     select: userSelect,
   });
 
+  if (!updatedUser.emailVerified) {
+    void sendEmailVerification(updatedUser.id).catch((error) => {
+      console.error("[email-verification] login delivery failed:", error);
+    });
+  }
+
   return buildAuthResponse(updatedUser);
 };
 
 export const authService = {
   register,
   login,
+  sendEmailVerification,
+  verifyEmail,
 };
