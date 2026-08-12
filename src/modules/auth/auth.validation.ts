@@ -12,6 +12,7 @@ export const registerSchema = z.object({
   avatarUrl: z.string().trim().url().optional(),
   institutionKey: z.string().trim().min(1).optional(),
   programKey: z.string().trim().min(1).optional(),
+  institutionName: z.string().trim().min(1).optional(),
 }).superRefine((value, ctx) => {
   const hasInstitution = Boolean(value.institutionKey);
   const hasProgram = Boolean(value.programKey);
