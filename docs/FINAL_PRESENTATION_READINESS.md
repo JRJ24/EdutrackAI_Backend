@@ -15,3 +15,5 @@ The presentation branch is considered technically ready only when these rules ho
 11. No automatic merge is performed. The previous adaptive branch remains the frozen reference base.
 
 Final browser verification should cover: Admin creates institution → career → subject → student registration sees that managed catalog → onboarding → Home/Pulse → explicit-topic copilot query → resources → Admin catalog sync/content authoring → publish a complete quiz → student attempt → progress/Pulse update.
+
+This document also triggers the final backend quality run after the persistent managed-catalog implementation.
