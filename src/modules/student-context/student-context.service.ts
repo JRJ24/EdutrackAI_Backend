@@ -167,7 +167,7 @@ const applyCatalog = async (userId: string, data: ApplyCatalogInput) => {
           data: {
             name: catalogSubject.name,
             description: `Asignatura importada desde el plan de estudios oficial de ${institution.shortName}.`,
-            level: `Período ${catalogSubject.period}`,
+            level: String(catalogSubject.period),
             isActive: true,
           },
           select: { id: true },
@@ -324,18 +324,25 @@ const syncCatalogSubjects = async () => {
         where: {
           name: { equals: catalogSubject.name, mode: "insensitive" },
         },
-        select: { id: true, isActive: true },
+        select: { id: true, isActive: true, level: true },
       });
 
       if (existing) {
         reused += 1;
-        if (!existing.isActive) {
+        const normalizedLevel = /^\d+$/.test(existing.level.trim())
+          ? existing.level
+          : String(catalogSubject.period);
+
+        if (!existing.isActive || normalizedLevel !== existing.level) {
           await tx.subject.update({
             where: { id: existing.id },
-            data: { isActive: true },
+            data: {
+              isActive: true,
+              level: normalizedLevel,
+            },
           });
-          reactivated += 1;
         }
+        if (!existing.isActive) reactivated += 1;
         continue;
       }
 
@@ -343,7 +350,7 @@ const syncCatalogSubjects = async () => {
         data: {
           name: catalogSubject.name,
           description: `Catálogo oficial ${catalogSubject.institution} · ${catalogSubject.program}`,
-          level: `Período ${catalogSubject.period}`,
+          level: String(catalogSubject.period),
           isActive: true,
         },
       });
