@@ -59,6 +59,7 @@ const buildPulse = async (userId: string) => {
           select: {
             id: true,
             title: true,
+            topic: true,
             scheduledAt: true,
             subject: { select: { id: true, name: true } },
           },
@@ -77,6 +78,7 @@ const buildPulse = async (userId: string) => {
         evaluationType: "Fecha personal",
         scheduledAt: personalDeadline.scheduledAt,
         subject: personalDeadline.subject,
+        topic: personalDeadline.topic,
         source: "student" as const,
       }
     : null;
@@ -103,8 +105,8 @@ const buildPulse = async (userId: string) => {
       ? `${upcomingEvaluation.title} de ${upcomingEvaluation.subject.name} es hoy.`
       : `Faltan ${days} día${days === 1 ? "" : "s"} para ${upcomingEvaluation.title} de ${upcomingEvaluation.subject.name}.`;
   } else if (assignments.length > 0) {
-    headline = "Tu semestre está bajo control.";
-    message = "No hay una urgencia académica detectada. Puedes practicar una materia o continuar con tu ritmo actual.";
+    headline = "Ya conozco tus materias. Ahora vamos a entender tu ritmo.";
+    message = "Añade una fecha o una nota, o empieza un repaso. Con esas señales EduTrack podrá decidir mejor qué te conviene hacer después.";
   }
 
   return {
@@ -150,19 +152,44 @@ const extractRequestedMinutes = (message: string) => {
   return Number.isFinite(value) ? Math.min(180, Math.max(10, value)) : null;
 };
 
-const extractTopic = (message: string) => {
+const normalizeTopic = (value: string, subjectName?: string | null) => {
+  let topic = value
+    .trim()
+    .replace(/[¿?!.]+$/g, "")
+    .replace(/^(?:hoy|ahora|esta semana)\s*/i, "")
+    .replace(/^(?:en|sobre|de)\s+/i, "")
+    .trim();
+
+  if (!topic) return null;
+  if (/^(?:tema|materia|clase|video|videos|recurso|recursos|material|materiales|lo de hoy)$/i.test(topic)) {
+    return null;
+  }
+
+  if (subjectName) {
+    const normalizedTopic = topic.toLowerCase();
+    const normalizedSubject = subjectName.toLowerCase();
+    if (normalizedTopic === normalizedSubject) return null;
+    if (normalizedTopic === `la materia ${normalizedSubject}`) return null;
+  }
+
+  return topic;
+};
+
+const extractTopic = (message: string, subjectName?: string | null) => {
   const match = message.match(
     /(?:no entiendo|ayúdame con|ayudame con|explícame|explicame|repasar|practicar)\s+(.+)/i,
   );
-  return match?.[1]?.trim().replace(/[?.!]+$/, "") || null;
+  return match?.[1] ? normalizeTopic(match[1], subjectName) : null;
 };
 
 const ask = async (userId: string, input: CopilotAskInput) => {
   const pulse = await buildPulse(userId);
   const normalized = input.message.toLowerCase();
   const requestedMinutes = extractRequestedMinutes(input.message);
-  const topic = extractTopic(input.message);
   const action = pulse.action;
+  const mentionedSubject = pulse.activeSubjects.find((item) =>
+    normalized.includes(item.subject.name.toLowerCase()),
+  ) ?? null;
 
   if (/pendiente|qué tengo|que tengo|agenda|examen|evaluaci/.test(normalized)) {
     const parts: string[] = [];
@@ -184,7 +211,7 @@ const ask = async (userId: string, input: CopilotAskInput) => {
   if (requestedMinutes) {
     if (!action) {
       return {
-        answer: `Tienes ${requestedMinutes} minutos disponibles. No hay una prioridad crítica ahora, así que elige una de tus materias y hagamos una práctica corta.`,
+        answer: `Tienes ${requestedMinutes} minutos disponibles. Todavía no tengo una prioridad suficientemente clara; elige una materia y usa ese bloque para un repaso corto.`,
         action: null,
         suggestedPrompts,
       };
@@ -202,17 +229,45 @@ const ask = async (userId: string, input: CopilotAskInput) => {
   }
 
   if (/no entiendo|ayúdame|ayudame|explícame|explicame|repasar|practicar/.test(normalized)) {
-    const subjectId = action?.subjectId ?? pulse.activeSubjects[0]?.subject.id ?? null;
-    const subjectName = action?.subjectName ?? pulse.activeSubjects[0]?.subject.name ?? null;
-    const effectiveTopic = topic || action?.topic || subjectName;
+    const subjectId = mentionedSubject?.subject.id ?? action?.subjectId ?? pulse.activeSubjects[0]?.subject.id ?? null;
+    const subjectName = mentionedSubject?.subject.name ?? action?.subjectName ?? pulse.activeSubjects[0]?.subject.name ?? null;
+    let effectiveTopic = extractTopic(input.message, subjectName) || action?.topic || null;
+
+    if (!effectiveTopic && subjectId) {
+      const recentContext = await prisma.studentAcademicItem.findFirst({
+        where: {
+          userId,
+          subjectId,
+          topic: { not: null },
+        },
+        select: { topic: true },
+        orderBy: { createdAt: "desc" },
+      });
+      effectiveTopic = recentContext?.topic ?? null;
+    }
+
+    if (!subjectName) {
+      return {
+        answer: "Primero configura tus materias actuales para que pueda ayudarte con el contenido correcto.",
+        action: null,
+        suggestedPrompts,
+      };
+    }
+
+    if (!effectiveTopic) {
+      return {
+        answer: `Sí puedo ayudarte con ${subjectName}, pero todavía no tengo registrado el tema concreto que estás viendo. Escríbeme el tema —por ejemplo “MAUI”, “normalización” o “derivadas”— y buscaré apoyo dentro de ese contexto, no una búsqueda genérica de la materia.`,
+        action: null,
+        resourceDiscovery: null,
+        suggestedPrompts,
+      };
+    }
 
     return {
-      answer: subjectName
-        ? `Vamos a hacerlo más simple. Empecemos por ${effectiveTopic ?? subjectName} dentro de ${subjectName}: primero una explicación o recurso corto y después práctica para comprobar si quedó claro.`
-        : "Primero configura tus materias actuales para que pueda ayudarte con el contenido correcto.",
+      answer: `Vamos con ${effectiveTopic} en ${subjectName}. Primero revisa una explicación o recurso corto del tema y después usa una práctica para comprobar qué quedó claro.`,
       action,
       resourceDiscovery: subjectId
-        ? { subjectId, topic: effectiveTopic ?? undefined }
+        ? { subjectId, topic: effectiveTopic }
         : null,
       suggestedPrompts,
     };
