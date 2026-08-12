@@ -32,12 +32,15 @@ const careerMatchScore = (career: string, programName: string) => {
 
 const getCatalog = async (req: Request, res: Response) => {
   try {
-    const user = requireUser(req);
-    const profile = await prisma.user.findUnique({
-      where: { id: user.userId },
-      select: { career: true },
-    });
-    const career = profile?.career?.trim() ?? "";
+    let career = "";
+
+    if (req.user?.userId) {
+      const profile = await prisma.user.findUnique({
+        where: { id: req.user.userId },
+        select: { career: true },
+      });
+      career = profile?.career?.trim() ?? "";
+    }
 
     const data = studentContextService.getCatalog().map((institution) => ({
       ...institution,
@@ -143,6 +146,20 @@ const removeMySubject = async (req: Request, res: Response) => {
   }
 };
 
+const syncCatalogSubjects = async (_req: Request, res: Response) => {
+  try {
+    const data = await studentContextService.syncCatalogSubjects();
+    return res.status(200).json({
+      ok: true,
+      message: "Academic catalog synchronized with operational subjects",
+      data,
+    });
+  } catch (error) {
+    const result = getErrorResponse(error, "Failed to synchronize academic catalog");
+    return res.status(result.statusCode).json({ ok: false, message: result.message });
+  }
+};
+
 export const studentContextController = {
   getCatalog,
   getProgram,
@@ -152,4 +169,5 @@ export const studentContextController = {
   addCustomSubject,
   updateMySubject,
   removeMySubject,
+  syncCatalogSubjects,
 };
