@@ -10,13 +10,9 @@ The presentation branch is considered technically ready only when these rules ho
 6. Admin can synchronize catalog subjects into operational subjects, then manage evaluations, resources, recommendations, notifications and quizzes.
 7. Quizzes are draft-first. Students only receive active quizzes whose questions have enough options and a correct answer.
 8. Quiz attempt scores are persisted on a 0–100 scale so dashboard/adaptive signals share one semantic scale.
-9. Email alerts are proactive rather than Admin-dependent: near evaluations, student deadlines, inactivity, weak recent quizzes and high adaptive priority can create notifications automatically.
-10. Academic emails use a branded HTML template and are sent only to verified student addresses. Registration/login can issue a verification email without adding a new database migration.
-11. The proactive scheduler runs shortly after backend startup and then hourly by default, while event changes can trigger checks immediately and dedupe prevents same-day spam.
-12. Student grade ownership remains enforced and Admin retains the global academic-management path.
-13. The managed-catalog feature adds migration `20260812121500_managed_academic_catalog`; it must be applied after pulling this head.
-14. No automatic merge is performed. The previous adaptive branch remains the frozen reference base.
+9. Student grade ownership remains enforced and Admin retains the global academic-management path.
+10. The managed-catalog feature adds migration `20260812121500_managed_academic_catalog`; it must be applied after pulling this head.
+11. `pnpm db:seed` now adds presentation-ready quizzes when matching active operational subjects exist. The seed is idempotent and currently covers MAUI/mobile, Programación Web, Estructuras de Datos, Bases de Datos and Inglés Técnico.
+12. No automatic merge is performed. The previous adaptive branch remains the frozen reference base.
 
-Final browser verification should cover: email verification → automatic evaluation/deadline alert → branded Gmail delivery → Admin creates institution → career → subject → student registration sees that managed catalog → onboarding → Home/Pulse → explicit-topic copilot query → resources → Modo concentración → Admin content/quiz authoring → student attempt → progress/Pulse update.
-
-This document also triggers the final backend quality run for the proactive-notification hardening pass.
+Final browser verification should cover: Admin creates institution → career → subject → student registration sees that managed catalog → onboarding → Home/Pulse → explicit-topic copilot query → resources → Admin catalog sync/content authoring → run `pnpm db:seed` → student sees multiple published quizzes → attempt one → progress/Pulse update.
