@@ -106,15 +106,15 @@ const applyCatalog = async (userId: string, data: ApplyCatalogInput) => {
     throw new HttpError(400, "Current period is outside the selected program");
   }
 
-  const periodSubjects = program.subjects.filter(
-    (subject) => subject.period === data.currentPeriod,
-  );
-  const selectedSubjects = periodSubjects.filter((subject) =>
+  // currentPeriod describes where the student is academically. It is not an
+  // enrollment boundary: real students frequently carry subjects from earlier
+  // terms or advance one from another term.
+  const selectedSubjects = program.subjects.filter((subject) =>
     data.selectedSubjectKeys.includes(subject.key),
   );
 
   if (selectedSubjects.length === 0) {
-    throw new HttpError(400, "Select at least one subject from the current period");
+    throw new HttpError(400, "Select at least one subject from the program");
   }
 
   const selectedKeys = selectedSubjects.map((subject) => subject.key);
@@ -148,11 +148,12 @@ const applyCatalog = async (userId: string, data: ApplyCatalogInput) => {
       data: { career: program.name },
     });
 
+    // Keep the final course list faithful to what the student confirmed,
+    // regardless of which period each catalog course belongs to.
     await tx.userSubject.updateMany({
       where: {
         userId,
         source: "institution_catalog",
-        curriculumPeriod: data.currentPeriod,
         curriculumCode: { notIn: selectedKeys },
       },
       data: { status: "inactive" },
