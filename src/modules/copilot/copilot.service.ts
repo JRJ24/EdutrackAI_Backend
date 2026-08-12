@@ -114,7 +114,7 @@ const buildPulse = async (userId: string) => {
       : `Faltan ${days} día${days === 1 ? "" : "s"} para ${upcomingEvaluation.title} de ${upcomingEvaluation.subject.name}.`;
   } else if (assignments.length > 0) {
     headline = "Ya conozco tus materias. Ahora vamos a entender tu ritmo.";
-    message = "Añade una fecha o una nota, o empieza un repaso. Con esas señales EduTrack podrá decidir mejor qué te conviene hacer después.";
+    message = "Añade una fecha, registra una nota o empieza un repaso. Cada señal ayuda a EduTrack a decidir mejor qué te conviene hacer después.";
   }
 
   return {
@@ -164,12 +164,8 @@ const removeSubjectFromTopic = (value: string, subjectName?: string | null) => {
   if (!subjectName) return value;
   const normalizedValue = normalizeForMatch(value);
   const normalizedSubject = normalizeForMatch(subjectName);
-  const index = normalizedValue.indexOf(normalizedSubject);
-  if (index < 0) return value;
+  if (!normalizedValue.includes(normalizedSubject)) return value;
 
-  // This is intentionally approximate: it is used only to prevent a full
-  // subject name from becoming a resource query. The direct user topic stays
-  // before the subject phrase in normal questions such as "MAUI en <materia>".
   const words = value.trim().split(/\s+/);
   const subjectWords = subjectName.trim().split(/\s+/).length;
   const normalizedWords = words.map(normalizeForMatch);
@@ -186,7 +182,7 @@ const removeSubjectFromTopic = (value: string, subjectName?: string | null) => {
 };
 
 const normalizeTopic = (value: string, subjectName?: string | null) => {
-  let topic = removeSubjectFromTopic(value, subjectName)
+  const topic = removeSubjectFromTopic(value, subjectName)
     .trim()
     .replace(/^["“”']+|["“”']+$/g, "")
     .replace(/[¿?!.]+$/g, "")
@@ -238,6 +234,58 @@ const isConcreteActivityTopic = (value?: string | null) => {
   return true;
 };
 
+type ActiveSubject = Awaited<ReturnType<typeof buildPulse>>["activeSubjects"][number];
+
+const topicSubjectRules: Array<{ topicTerms: string[]; subjectTerms: string[] }> = [
+  {
+    topicTerms: ["maui", ".net maui", "xaml", "android", "ios", "shell", "navegacion", "navegación", "mobile", "movil", "móvil"],
+    subjectTerms: ["aplicaciones moviles", "desarrollo de aplicaciones moviles", "movil"],
+  },
+  {
+    topicTerms: ["sql", "normalizacion", "normalización", "postgres", "postgresql", "join", "consulta", "modelo relacional"],
+    subjectTerms: ["base de datos", "bases de datos"],
+  },
+  {
+    topicTerms: ["html", "css", "javascript", "typescript", "react", "frontend", "api web", "http"],
+    subjectTerms: ["programacion web", "desarrollo web", "web"],
+  },
+  {
+    topicTerms: ["algoritmo", "pseudocodigo", "pseudocódigo", "diagrama de flujo"],
+    subjectTerms: ["algoritmos", "fundamentos de programacion", "programacion"],
+  },
+  {
+    topicTerms: ["estructura de datos", "lista enlazada", "pila", "cola", "arbol", "árbol", "grafo"],
+    subjectTerms: ["estructura de datos"],
+  },
+  {
+    topicTerms: ["vocabulario", "grammar", "gramatica", "gramática", "present perfect", "technical english"],
+    subjectTerms: ["ingles tecnico", "inglés técnico", "ingles"],
+  },
+];
+
+const inferSubjectFromTopic = (topic: string, subjects: ActiveSubject[]) => {
+  const normalizedTopic = normalizeForMatch(topic);
+  let best: { subject: ActiveSubject; score: number } | null = null;
+
+  for (const item of subjects) {
+    const subjectName = normalizeForMatch(item.subject.name);
+    let score = 0;
+
+    for (const rule of topicSubjectRules) {
+      const topicMatches = rule.topicTerms.some((term) => normalizedTopic.includes(normalizeForMatch(term)));
+      const subjectMatches = rule.subjectTerms.some((term) => subjectName.includes(normalizeForMatch(term)));
+      if (topicMatches && subjectMatches) score += 10;
+    }
+
+    const topicTokens = normalizedTopic.split(/\W+/).filter((token) => token.length >= 4);
+    score += topicTokens.filter((token) => subjectName.includes(token)).length;
+
+    if (!best || score > best.score) best = { subject: item, score };
+  }
+
+  return best && best.score > 0 ? best.subject : null;
+};
+
 const ask = async (userId: string, input: CopilotAskInput) => {
   const pulse = await buildPulse(userId);
   const normalized = normalizeForMatch(input.message);
@@ -285,10 +333,22 @@ const ask = async (userId: string, input: CopilotAskInput) => {
   }
 
   if (/no entiendo|ayudame|explicame|repasar|practicar/.test(normalized)) {
-    const subjectId = mentionedSubject?.subject.id ?? action?.subjectId ?? pulse.activeSubjects[0]?.subject.id ?? null;
-    const subjectName = mentionedSubject?.subject.name ?? action?.subjectName ?? pulse.activeSubjects[0]?.subject.name ?? null;
+    const topicWithMention = extractTopic(input.message, mentionedSubject?.subject.name ?? null);
+    const explicitTopic = topicWithMention ?? extractTopic(input.message);
+    const inferredSubject = explicitTopic
+      ? inferSubjectFromTopic(explicitTopic, pulse.activeSubjects)
+      : null;
+    const actionSubject = action
+      ? pulse.activeSubjects.find((item) => item.subject.id === action.subjectId) ?? null
+      : null;
 
-    const explicitTopic = extractTopic(input.message, subjectName);
+    const resolvedSubject = mentionedSubject
+      ?? inferredSubject
+      ?? (!explicitTopic ? actionSubject : null)
+      ?? (pulse.activeSubjects.length === 1 ? pulse.activeSubjects[0] : null);
+
+    const subjectId = resolvedSubject?.subject.id ?? null;
+    const subjectName = resolvedSubject?.subject.name ?? null;
     let effectiveTopic = explicitTopic;
 
     if (!effectiveTopic && subjectId) {
@@ -304,11 +364,20 @@ const ask = async (userId: string, input: CopilotAskInput) => {
       effectiveTopic = recentContext?.topic ?? null;
     }
 
-    if (!effectiveTopic && isConcreteActivityTopic(action?.topic)) {
+    if (!effectiveTopic && actionSubject?.subject.id === subjectId && isConcreteActivityTopic(action?.topic)) {
       effectiveTopic = action?.topic ?? null;
     }
 
     if (!subjectName) {
+      if (explicitTopic && pulse.activeSubjects.length > 1) {
+        return {
+          answer: `Entiendo que quieres trabajar ${explicitTopic}, pero tienes varias materias activas y no quiero adivinar mal. Dime la materia una vez o elige una desde Materias; después podré mantener ese contexto.`,
+          action: null,
+          resourceDiscovery: null,
+          suggestedPrompts,
+        };
+      }
+
       return {
         answer: "Primero configura tus materias actuales para que pueda ayudarte con el contenido correcto.",
         action: null,
