@@ -3,6 +3,7 @@ import { Prisma } from "../../../generated/prisma/client";
 
 const HOURS_24 = 24 * 60 * 60 * 1000;
 const DAYS_7 = 7 * HOURS_24;
+const OPEN_ATTEMPT_DATE = new Date(0);
 
 const startOfDay = (date: Date) => {
   const copy = new Date(date);
@@ -52,7 +53,9 @@ export const dashboardService = {
           )
         : 0;
 
-    const finishedAttempts = attemptsLastWeek.filter((a) => a.finishedAt);
+    const finishedAttempts = attemptsLastWeek.filter(
+      (attempt) => attempt.finishedAt.getTime() > OPEN_ATTEMPT_DATE.getTime(),
+    );
     const avgScore =
       finishedAttempts.length > 0
         ? Number(
@@ -68,7 +71,7 @@ export const dashboardService = {
       studySessionsLast7Days: sessionsLastWeek.length,
       totalStudyMinutesLast7Days: totalStudyMinutes,
       averageProductivity: avgProductivity,
-      quizAttemptsLast7Days: attemptsLastWeek.length,
+      quizAttemptsLast7Days: finishedAttempts.length,
       averageQuizScore: avgScore,
       unreadNotifications,
     };
