@@ -42,7 +42,8 @@ const getCatalog = async (req: Request, res: Response) => {
       career = profile?.career?.trim() ?? "";
     }
 
-    const data = studentContextService.getCatalog().map((institution) => ({
+    const catalog = await studentContextService.getCatalog();
+    const data = catalog.map((institution) => ({
       ...institution,
       programs: [...institution.programs].sort(
         (a, b) => careerMatchScore(career, b.name) - careerMatchScore(career, a.name),
@@ -62,13 +63,53 @@ const getCatalog = async (req: Request, res: Response) => {
 
 const getProgram = async (req: Request, res: Response) => {
   try {
-    const data = studentContextService.getProgram(
+    const data = await studentContextService.getProgram(
       String(req.params.institutionKey),
       String(req.params.programKey),
     );
     return res.status(200).json({ ok: true, message: "Program fetched successfully", data });
   } catch (error) {
     const result = getErrorResponse(error, "Failed to fetch academic program");
+    return res.status(result.statusCode).json({ ok: false, message: result.message });
+  }
+};
+
+const getManagedCatalog = async (_req: Request, res: Response) => {
+  try {
+    const data = await studentContextService.getManagedCatalog();
+    return res.status(200).json({ ok: true, message: "Managed academic catalog fetched successfully", data });
+  } catch (error) {
+    const result = getErrorResponse(error, "Failed to fetch managed academic catalog");
+    return res.status(result.statusCode).json({ ok: false, message: result.message });
+  }
+};
+
+const createManagedInstitution = async (req: Request, res: Response) => {
+  try {
+    const data = await studentContextService.createManagedInstitution(req.body);
+    return res.status(201).json({ ok: true, message: "Institution created successfully", data });
+  } catch (error) {
+    const result = getErrorResponse(error, "Failed to create institution");
+    return res.status(result.statusCode).json({ ok: false, message: result.message });
+  }
+};
+
+const createManagedProgram = async (req: Request, res: Response) => {
+  try {
+    const data = await studentContextService.createManagedProgram(String(req.params.institutionId), req.body);
+    return res.status(201).json({ ok: true, message: "Academic program created successfully", data });
+  } catch (error) {
+    const result = getErrorResponse(error, "Failed to create academic program");
+    return res.status(result.statusCode).json({ ok: false, message: result.message });
+  }
+};
+
+const createManagedCatalogSubject = async (req: Request, res: Response) => {
+  try {
+    const data = await studentContextService.createManagedCatalogSubject(String(req.params.programId), req.body);
+    return res.status(201).json({ ok: true, message: "Catalog subject created successfully", data });
+  } catch (error) {
+    const result = getErrorResponse(error, "Failed to create catalog subject");
     return res.status(result.statusCode).json({ ok: false, message: result.message });
   }
 };
@@ -163,6 +204,10 @@ const syncCatalogSubjects = async (_req: Request, res: Response) => {
 export const studentContextController = {
   getCatalog,
   getProgram,
+  getManagedCatalog,
+  createManagedInstitution,
+  createManagedProgram,
+  createManagedCatalogSubject,
   getMe,
   applyCatalog,
   saveCustomContext,
