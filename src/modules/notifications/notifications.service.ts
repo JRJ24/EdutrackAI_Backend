@@ -76,10 +76,15 @@ const create = async (data: CreateNotificationInput) => {
     select: notificationSelect,
   });
 
-  // Email is an optional delivery channel. Database/in-app notification success
-  // never depends on Gmail availability or credentials.
+  // In-app notification is always the source of truth. Email is a secondary
+  // channel and only sends to verified addresses when the notification is due.
   if (scheduleAt.getTime() <= Date.now()) {
-    void notificationEmailService.sendToUser(data.userId, data.title, data.message);
+    void notificationEmailService.sendToUser(
+      data.userId,
+      data.title,
+      data.message,
+      { type: data.type },
+    );
   }
 
   return notification;
