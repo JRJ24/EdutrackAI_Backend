@@ -1,5 +1,6 @@
 import { prisma } from "../../database/prisma";
 import { HttpError } from "../../helpers/http-error";
+import { notificationEmailService } from "./notification-email.service";
 import {
   CreateNotificationInput,
   UpdateNotificationInput,
@@ -60,19 +61,28 @@ const getById = async (id: string, requestingUserId: string, isAdmin: boolean) =
 
 const create = async (data: CreateNotificationInput) => {
   await ensureUserExists(data.userId);
+  const scheduleAt = data.scheduleAt ?? new Date();
 
-  return prisma.notifications.create({
+  const notification = await prisma.notifications.create({
     data: {
       userId: data.userId,
       title: data.title,
       message: data.message,
       type: data.type,
-      scheduleAt: data.scheduleAt ?? new Date(),
+      scheduleAt,
       isRead: data.isRead ?? false,
       createdAt: new Date(),
     },
     select: notificationSelect,
   });
+
+  // Email is an optional delivery channel. Database/in-app notification success
+  // never depends on Gmail availability or credentials.
+  if (scheduleAt.getTime() <= Date.now()) {
+    void notificationEmailService.sendToUser(data.userId, data.title, data.message);
+  }
+
+  return notification;
 };
 
 const update = async (id: string, data: UpdateNotificationInput) => {
