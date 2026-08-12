@@ -25,6 +25,8 @@ The reference period is not an enrollment boundary. A student can be in period 6
 
 Institutional catalogs are explicit, versionable data with a public source URL. The ITLA catalog currently includes official plans for Desarrollo de Software, Redes de Información, Inteligencia Artificial and Seguridad Informática. Students can still use manual setup when their institution/program is not cataloged.
 
+The existing `User.career` profile field is reused as an onboarding hint. Authenticated catalog responses prioritize a compatible official program when the saved career matches, reducing repeated setup without coupling account creation to a specific institution catalog.
+
 ## Copilot
 
 The current copilot is contextual and deterministic. It does not pretend to be a generative LLM. It combines the existing adaptive engine, nearest evaluation/deadline, active subjects, recent study metrics and intent parsing to answer practical questions such as:
