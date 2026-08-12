@@ -3,6 +3,7 @@ import { comparePassword, hashPassword } from "../../helpers/hashpassword";
 import { HttpError } from "../../helpers/http-error";
 import { signAuthToken } from "../../helpers/jwt";
 import { normalizeEmail } from "../../helpers/secure-fields";
+import { findInstitution, findProgram } from "../student-context/academic-catalog";
 import { LoginInput, RegisterInput } from "./auth.validation";
 
 const DEFAULT_ROLE_NAME = "student";
@@ -67,20 +68,51 @@ const register = async (data: RegisterInput) => {
     throw new HttpError(500, "Default student role is not configured");
   }
 
-  const password = await hashPassword(data.password);
+  const institution = data.institutionKey
+    ? findInstitution(data.institutionKey)
+    : null;
+  const program = data.institutionKey && data.programKey
+    ? findProgram(data.institutionKey, data.programKey)
+    : null;
 
-  const user = await prisma.user.create({
-    data: {
-      firstName: data.firstName,
-      lastName: data.lastName,
-      studentCode: data.studentCode,
-      career: data.career,
-      email,
-      password,
-      avatarUrl: data.avatarUrl,
-      roleId: defaultRole.id,
-    },
-    select: userSelect,
+  if ((data.institutionKey || data.programKey) && (!institution || !program)) {
+    throw new HttpError(400, "Academic catalog selection is not valid");
+  }
+
+  const password = await hashPassword(data.password);
+  const career = program?.name ?? data.career;
+
+  const user = await prisma.$transaction(async (tx) => {
+    const created = await tx.user.create({
+      data: {
+        firstName: data.firstName,
+        lastName: data.lastName,
+        studentCode: data.studentCode,
+        career,
+        email,
+        password,
+        avatarUrl: data.avatarUrl,
+        roleId: defaultRole.id,
+      },
+      select: userSelect,
+    });
+
+    if (institution && program) {
+      await tx.studentContext.create({
+        data: {
+          userId: created.id,
+          institutionKey: institution.key,
+          institutionName: institution.name,
+          programKey: program.key,
+          programName: program.name,
+          currentPeriod: 1,
+          sourceUrl: program.sourceUrl,
+          onboardingCompleted: false,
+        },
+      });
+    }
+
+    return created;
   });
 
   return buildAuthResponse(user);
