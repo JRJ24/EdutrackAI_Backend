@@ -12,7 +12,9 @@ The presentation branch is considered technically ready only when these rules ho
 8. Quiz attempt scores are persisted on a 0–100 scale so dashboard/adaptive signals share one semantic scale.
 9. Student grade ownership remains enforced and Admin retains the global academic-management path.
 10. The managed-catalog feature adds migration `20260812121500_managed_academic_catalog`; it must be applied after pulling this head.
-11. `pnpm db:seed` now adds presentation-ready quizzes when matching active operational subjects exist. The seed is idempotent and currently covers MAUI/mobile, Programación Web, Estructuras de Datos, Bases de Datos and Inglés Técnico.
+11. `pnpm db:seed` adds presentation-ready quizzes when matching active operational subjects exist. The seed is idempotent and currently covers MAUI/mobile, Programación Web, Estructuras de Datos, Bases de Datos and Inglés Técnico.
 12. No automatic merge is performed. The previous adaptive branch remains the frozen reference base.
 
 Final browser verification should cover: Admin creates institution → career → subject → student registration sees that managed catalog → onboarding → Home/Pulse → explicit-topic copilot query → resources → Admin catalog sync/content authoring → run `pnpm db:seed` → student sees multiple published quizzes → attempt one → progress/Pulse update.
+
+Validation marker: presentation quiz seed pack.
