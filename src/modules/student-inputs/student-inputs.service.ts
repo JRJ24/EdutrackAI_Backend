@@ -1,5 +1,6 @@
 import { prisma } from "../../database/prisma";
 import { HttpError } from "../../helpers/http-error";
+import { proactiveAlertsService } from "../notifications/proactive-alerts.service";
 import type {
   CreateStudentInput,
   UpdateStudentInput,
@@ -88,6 +89,12 @@ const syncDeadlinePlan = async (item: {
   });
 };
 
+const triggerDeadlineAlerts = (userId: string) => {
+  void proactiveAlertsService.runForUser(userId).catch((error) => {
+    console.error("[proactive-alerts] deadline trigger failed:", error);
+  });
+};
+
 const list = async (userId: string, subjectId?: string, itemType?: string) => {
   return prisma.studentAcademicItem.findMany({
     where: {
@@ -131,6 +138,7 @@ const create = async (userId: string, data: CreateStudentInput) => {
       topic: item.topic,
       scheduledAt: data.scheduledAt,
     });
+    triggerDeadlineAlerts(userId);
   }
 
   return item;
@@ -172,6 +180,7 @@ const update = async (userId: string, id: string, data: UpdateStudentInput) => {
       topic: data.topic === undefined ? existing.topic : data.topic,
       scheduledAt,
     });
+    triggerDeadlineAlerts(userId);
   }
 
   return item;
