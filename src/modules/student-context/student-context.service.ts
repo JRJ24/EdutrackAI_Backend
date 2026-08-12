@@ -106,9 +106,6 @@ const applyCatalog = async (userId: string, data: ApplyCatalogInput) => {
     throw new HttpError(400, "Current period is outside the selected program");
   }
 
-  // currentPeriod describes where the student is academically. It is not an
-  // enrollment boundary: real students frequently carry subjects from earlier
-  // terms or advance one from another term.
   const selectedSubjects = program.subjects.filter((subject) =>
     data.selectedSubjectKeys.includes(subject.key),
   );
@@ -148,8 +145,6 @@ const applyCatalog = async (userId: string, data: ApplyCatalogInput) => {
       data: { career: program.name },
     });
 
-    // Keep the final course list faithful to what the student confirmed,
-    // regardless of which period each catalog course belongs to.
     await tx.userSubject.updateMany({
       where: {
         userId,
@@ -297,6 +292,75 @@ const removeMySubject = async (userId: string, assignmentId: string) => {
   });
 };
 
+const syncCatalogSubjects = async () => {
+  const uniqueSubjects = new Map<
+    string,
+    { name: string; period: number; institution: string; program: string }
+  >();
+
+  for (const institution of academicCatalog) {
+    for (const program of institution.programs) {
+      for (const subject of program.subjects) {
+        const key = subject.name.trim().toLowerCase();
+        if (!uniqueSubjects.has(key)) {
+          uniqueSubjects.set(key, {
+            name: subject.name,
+            period: subject.period,
+            institution: institution.shortName,
+            program: program.name,
+          });
+        }
+      }
+    }
+  }
+
+  return prisma.$transaction(async (tx) => {
+    let created = 0;
+    let reused = 0;
+    let reactivated = 0;
+
+    for (const catalogSubject of uniqueSubjects.values()) {
+      const existing = await tx.subject.findFirst({
+        where: {
+          name: { equals: catalogSubject.name, mode: "insensitive" },
+        },
+        select: { id: true, isActive: true },
+      });
+
+      if (existing) {
+        reused += 1;
+        if (!existing.isActive) {
+          await tx.subject.update({
+            where: { id: existing.id },
+            data: { isActive: true },
+          });
+          reactivated += 1;
+        }
+        continue;
+      }
+
+      await tx.subject.create({
+        data: {
+          name: catalogSubject.name,
+          description: `Catálogo oficial ${catalogSubject.institution} · ${catalogSubject.program}`,
+          level: `Período ${catalogSubject.period}`,
+          isActive: true,
+        },
+      });
+      created += 1;
+    }
+
+    return {
+      institutions: academicCatalog.length,
+      programs: academicCatalog.reduce((total, institution) => total + institution.programs.length, 0),
+      uniqueSubjects: uniqueSubjects.size,
+      created,
+      reused,
+      reactivated,
+    };
+  });
+};
+
 export const studentContextService = {
   getCatalog,
   getProgram,
@@ -306,4 +370,5 @@ export const studentContextService = {
   addCustomSubject,
   updateMySubject,
   removeMySubject,
+  syncCatalogSubjects,
 };
