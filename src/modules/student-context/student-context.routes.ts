@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { requireAuth } from "../../middlewares/auth.middlewares";
+import { requireAuth, requireRole } from "../../middlewares/auth.middlewares";
 import { validateBody, validateParams } from "../../middlewares/validate.middlewares";
 import { studentContextController } from "./student-context.controller";
 import {
@@ -21,13 +21,20 @@ const assignmentParamsSchema = z.object({
   assignmentId: z.string().uuid(),
 });
 
-router.get("/catalog", requireAuth, studentContextController.getCatalog);
+// Public, read-only curriculum data is used by registration before a session exists.
+router.get("/catalog", studentContextController.getCatalog);
 router.get(
   "/catalog/:institutionKey/:programKey",
-  requireAuth,
   validateParams(programParamsSchema),
   studentContextController.getProgram,
 );
+router.post(
+  "/catalog/sync",
+  requireAuth,
+  requireRole("admin"),
+  studentContextController.syncCatalogSubjects,
+);
+
 router.get("/me", requireAuth, studentContextController.getMe);
 router.post(
   "/apply",
