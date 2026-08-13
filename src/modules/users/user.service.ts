@@ -206,7 +206,12 @@ const changePassword = async (userId: string, data: ChangePasswordInput) => {
   if (!isValid) {
     throw new HttpError(401, "Current password is incorrect");
   }
+  
+  const isSameAsOld = await comparePassword(data.newPassword, user.password);
 
+  if (isSameAsOld) {
+    throw new HttpError(400, "New password must be different from the current password");
+  }
   const hashed = await hashPassword(data.newPassword);
 
   await prisma.user.update({

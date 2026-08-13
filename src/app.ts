@@ -8,6 +8,7 @@ import cors from "cors";
 import { prisma } from "./database/prisma";
 import router from "./router";
 import { initializeSocket } from "./socket";
+import { startAdaptiveEngineScheduler } from "./modules/adaptive-engine/adaptive-engine.scheduler";
 import path from "path";
 
 const app: express.Application = express();
@@ -57,6 +58,7 @@ const startServer = async () => {
 
     const io = initializeSocket(server);
     app.set("socketio", io);
+    startAdaptiveEngineScheduler();
 
     server.listen(PORT, () => {
       console.log(`Server running on http://localhost:${PORT}`);
@@ -67,7 +69,6 @@ const startServer = async () => {
     process.exit(1);
   }
 };
-
 
 const shutdown = async () => {
   console.log("Shutting down server...");
@@ -80,6 +81,5 @@ const shutdown = async () => {
 
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
-
 
 startServer();

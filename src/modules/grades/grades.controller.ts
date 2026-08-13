@@ -84,7 +84,8 @@ const create = async (req: Request, res: Response) => {
       return res.status(401).json({ ok: false, message: "Authentication required" });
     }
 
-    const data = await gradesService.create(req.body, req.user.userId);
+    const isAdmin = req.user.role === "admin";
+    const data = await gradesService.create(req.body, req.user.userId, isAdmin);
 
     return res.status(201).json({
       ok: true,
@@ -107,7 +108,13 @@ const update = async (req: Request, res: Response) => {
       return res.status(401).json({ ok: false, message: "Authentication required" });
     }
 
-    const data = await gradesService.update(String(req.params.id), req.body, req.user.userId);
+    const isAdmin = req.user.role === "admin";
+    const data = await gradesService.update(
+      String(req.params.id),
+      req.body,
+      req.user.userId,
+      isAdmin,
+    );
 
     return res.status(200).json({
       ok: true,
@@ -126,7 +133,12 @@ const update = async (req: Request, res: Response) => {
 
 const remove = async (req: Request, res: Response) => {
   try {
-    await gradesService.remove(String(req.params.id));
+    if (!req.user) {
+      return res.status(401).json({ ok: false, message: "Authentication required" });
+    }
+
+    const isAdmin = req.user.role === "admin";
+    await gradesService.remove(String(req.params.id), req.user.userId, isAdmin);
 
     return res.status(200).json({
       ok: true,

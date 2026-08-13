@@ -2,7 +2,11 @@ import { Prisma } from "../../../generated/prisma/client";
 import { prisma } from "../../database/prisma";
 import { HttpError } from "../../helpers/http-error";
 import { recordAudit } from "../../helpers/audit";
-import { ActiveToggleInput } from "./admin.validation";
+import {
+  ActiveToggleInput,
+  AuditLogFilterInput,
+  RoleChangeInput,
+} from "./admin.validation";
 import { UserFilterInput } from "../dashboard/dashboard.validations";
 
 const adminUserSelect = {
@@ -21,6 +25,7 @@ const adminUserSelect = {
     select: {
       id: true,
       name: true,
+      description: true,
     },
   },
 } as const;
@@ -69,6 +74,17 @@ const listUsers = async (filter: UserFilterInput) => {
   };
 };
 
+const listRoles = async () => {
+  return prisma.roles.findMany({
+    select: {
+      id: true,
+      name: true,
+      description: true,
+    },
+    orderBy: { name: "asc" },
+  });
+};
+
 const setUserActive = async (
   userId: string,
   data: ActiveToggleInput,
@@ -76,6 +92,10 @@ const setUserActive = async (
   ipAddress?: string,
   userAgent?: string,
 ) => {
+  if (userId === adminId && !data.isActive) {
+    throw new HttpError(400, "You cannot deactivate your own account");
+  }
+
   const existing = await prisma.user.findUnique({
     where: { id: userId },
     select: { id: true, isActive: true },
@@ -105,6 +125,70 @@ const setUserActive = async (
     entityId: userId,
     oldValues: { isActive: existing.isActive },
     newValues: { isActive: data.isActive, reason: data.reason ?? null },
+    ipAddress,
+    userAgent,
+  });
+
+  return updated;
+};
+
+const setUserRole = async (
+  userId: string,
+  data: RoleChangeInput,
+  adminId: string,
+  ipAddress?: string,
+  userAgent?: string,
+) => {
+  const [existing, targetRole] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        role: { select: { id: true, name: true } },
+      },
+    }),
+    prisma.roles.findUnique({
+      where: { id: data.roleId },
+      select: { id: true, name: true, description: true },
+    }),
+  ]);
+
+  if (!existing) {
+    throw new HttpError(404, "User not found");
+  }
+
+  if (!targetRole) {
+    throw new HttpError(404, "Role not found");
+  }
+
+  if (userId === adminId && targetRole.name.toLowerCase() !== "admin") {
+    throw new HttpError(400, "You cannot remove your own administrator role");
+  }
+
+  if (existing.role.id === targetRole.id) {
+    return prisma.user.findUnique({
+      where: { id: userId },
+      select: adminUserSelect,
+    });
+  }
+
+  const updated = await prisma.user.update({
+    where: { id: userId },
+    data: { roleId: targetRole.id },
+    select: adminUserSelect,
+  });
+
+  await recordAudit({
+    userId: adminId,
+    action: "CHANGE_USER_ROLE",
+    entityName: "User",
+    entityId: userId,
+    oldValues: { roleId: existing.role.id, role: existing.role.name },
+    newValues: {
+      roleId: targetRole.id,
+      role: targetRole.name,
+      reason: data.reason ?? null,
+    },
     ipAddress,
     userAgent,
   });
@@ -146,15 +230,41 @@ const getStats = async () => {
   };
 };
 
-const listAuditLogs = async (page: number, limit: number) => {
-  const skip = (page - 1) * limit;
+const listAuditLogs = async (filter: AuditLogFilterInput) => {
+  const where: Prisma.AuditLogWhereInput = {};
+
+  if (filter.action) {
+    where.action = { contains: filter.action, mode: "insensitive" };
+  }
+
+  if (filter.entityName) {
+    where.entityName = { contains: filter.entityName, mode: "insensitive" };
+  }
+
+  if (filter.userId) {
+    where.userId = filter.userId;
+  }
+
+  if (filter.search) {
+    where.OR = [
+      { action: { contains: filter.search, mode: "insensitive" } },
+      { entityName: { contains: filter.search, mode: "insensitive" } },
+      { entityId: { contains: filter.search, mode: "insensitive" } },
+      { user: { firstName: { contains: filter.search, mode: "insensitive" } } },
+      { user: { lastName: { contains: filter.search, mode: "insensitive" } } },
+      { user: { email: { contains: filter.search, mode: "insensitive" } } },
+    ];
+  }
+
+  const skip = (filter.page - 1) * filter.limit;
 
   const [total, records] = await Promise.all([
-    prisma.auditLog.count(),
+    prisma.auditLog.count({ where }),
     prisma.auditLog.findMany({
+      where,
       orderBy: { createdAt: "desc" },
       skip,
-      take: limit,
+      take: filter.limit,
       include: {
         user: {
           select: { id: true, firstName: true, lastName: true, email: true },
@@ -166,17 +276,19 @@ const listAuditLogs = async (page: number, limit: number) => {
   return {
     data: records,
     pagination: {
-      page,
-      limit,
+      page: filter.page,
+      limit: filter.limit,
       total,
-      totalPages: Math.ceil(total / limit),
+      totalPages: Math.ceil(total / filter.limit),
     },
   };
 };
 
 export const adminService = {
   listUsers,
+  listRoles,
   setUserActive,
+  setUserRole,
   getStats,
   listAuditLogs,
 };

@@ -1,6 +1,7 @@
 import { Prisma } from "../../../generated/prisma/client";
 import { prisma } from "../../database/prisma";
 import { HttpError } from "../../helpers/http-error";
+import { triggerAdaptiveRecalculation } from "../adaptive-engine/adaptive-engine.events";
 import { CreateGradeInput, UpdateGradeInput } from "./grades.validation";
 
 const gradeSelect = {
@@ -38,12 +39,12 @@ const gradeSelect = {
 
 const ensureUserSubjectLink = async (userId: string, subjectId: string) => {
   const link = await prisma.userSubject.findFirst({
-    where: { userId, subjectId },
+    where: { userId, subjectId, status: "active" },
     select: { id: true },
   });
 
   if (!link) {
-    throw new HttpError(400, "User is not enrolled in this subject");
+    throw new HttpError(400, "User is not active in this subject");
   }
 };
 
@@ -83,12 +84,22 @@ const getBySubject = async (subjectId: string, requestingUserId: string, isAdmin
   });
 };
 
-const create = async (data: CreateGradeInput, changedById: string) => {
-  await ensureUserSubjectLink(data.userId, data.subjectId);
+const create = async (
+  data: CreateGradeInput,
+  requestingUserId: string,
+  isAdmin: boolean,
+) => {
+  const targetUserId = isAdmin ? data.userId : requestingUserId;
 
-  return prisma.grades.create({
+  if (!isAdmin && data.userId !== requestingUserId) {
+    throw new HttpError(403, "You can only create your own grades");
+  }
+
+  await ensureUserSubjectLink(targetUserId, data.subjectId);
+
+  const result = await prisma.grades.create({
     data: {
-      userId: data.userId,
+      userId: targetUserId,
       subjectId: data.subjectId,
       gradeValue: new Prisma.Decimal(data.gradeValue),
       gradeType: data.gradeType,
@@ -97,20 +108,28 @@ const create = async (data: CreateGradeInput, changedById: string) => {
     },
     select: gradeSelect,
   });
+
+  triggerAdaptiveRecalculation(targetUserId, "grade_created");
+  return result;
 };
 
 const update = async (
   id: string,
   data: UpdateGradeInput,
   changedById: string,
+  isAdmin: boolean,
 ) => {
   const existing = await prisma.grades.findUnique({
     where: { id },
-    select: { id: true, gradeValue: true },
+    select: { id: true, userId: true, gradeValue: true },
   });
 
   if (!existing) {
     throw new HttpError(404, "Grade not found");
+  }
+
+  if (!isAdmin && existing.userId !== changedById) {
+    throw new HttpError(403, "You can only update your own grades");
   }
 
   const updateData: Record<string, unknown> = {};
@@ -150,11 +169,23 @@ const update = async (
     return updated;
   });
 
+  triggerAdaptiveRecalculation(existing.userId, "grade_updated");
   return result;
 };
 
-const remove = async (id: string) => {
+const remove = async (id: string, requestingUserId: string, isAdmin: boolean) => {
+  const existing = await prisma.grades.findUnique({
+    where: { id },
+    select: { userId: true },
+  });
+  if (!existing) throw new HttpError(404, "Grade not found");
+
+  if (!isAdmin && existing.userId !== requestingUserId) {
+    throw new HttpError(403, "You can only delete your own grades");
+  }
+
   await prisma.grades.delete({ where: { id } });
+  triggerAdaptiveRecalculation(existing.userId, "grade_updated");
 };
 
 export const gradesService = {

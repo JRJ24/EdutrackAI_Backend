@@ -7,6 +7,8 @@ import {
   UpdateQuizziesInput,
 } from "./quizzies.validation";
 
+const OPEN_ATTEMPT_DATE = new Date(0);
+
 const quizziesSelect = {
   id: true,
   title: true,
@@ -37,7 +39,7 @@ const quizziesSelect = {
   },
 } as const;
 
-const attemptSelect = {
+const attemptSummarySelect = {
   id: true,
   score: true,
   totalQuestion: true,
@@ -48,7 +50,12 @@ const attemptSelect = {
     select: {
       id: true,
       title: true,
+      description: true,
+      difficulty: true,
       timeLimitMinutes: true,
+      subject: {
+        select: { id: true, name: true, level: true },
+      },
     },
   },
   user: {
@@ -58,8 +65,12 @@ const attemptSelect = {
       lastName: true,
     },
   },
-  studenAnswers: true,
+  _count: {
+    select: { studenAnswers: true },
+  },
 } as const;
+
+const isFinished = (finishedAt: Date) => finishedAt.getTime() > OPEN_ATTEMPT_DATE.getTime();
 
 const ensureSubjectActive = async (subjectId: string) => {
   const subject = await prisma.subject.findUnique({
@@ -72,29 +83,77 @@ const ensureSubjectActive = async (subjectId: string) => {
   }
 };
 
-const ensureQuizExists = async (quizId: string) => {
+const ensureQuizExists = async (quizId: string, allowInactive = false) => {
   const quiz = await prisma.quizzies.findUnique({
     where: { id: quizId },
-    select: { id: true, isActive: true },
+    select: { id: true, isActive: true, timeLimitMinutes: true },
   });
 
-  if (!quiz || !quiz.isActive) {
+  if (!quiz || (!allowInactive && !quiz.isActive)) {
     throw new HttpError(404, "Quiz not found or inactive");
   }
 
   return quiz;
 };
 
-const getAll = async () => {
-  return prisma.quizzies.findMany({
+const getQuizReadiness = async (quizId: string) => {
+  const questions = await prisma.questions.findMany({
+    where: { quizId },
+    select: {
+      id: true,
+      questionOptions: {
+        select: { isCorrect: true },
+      },
+    },
+  });
+
+  const incompleteQuestions = questions.filter(
+    (question) =>
+      question.questionOptions.length < 2 ||
+      !question.questionOptions.some((option) => option.isCorrect),
+  );
+
+  return {
+    ready: questions.length > 0 && incompleteQuestions.length === 0,
+    questionCount: questions.length,
+    incompleteQuestionCount: incompleteQuestions.length,
+  };
+};
+
+const assertQuizReady = async (quizId: string) => {
+  const readiness = await getQuizReadiness(quizId);
+  if (!readiness.ready) {
+    throw new HttpError(
+      409,
+      readiness.questionCount === 0
+        ? "Quiz must have at least one question before publishing"
+        : "Every quiz question needs at least two options and one correct answer before publishing",
+    );
+  }
+  return readiness;
+};
+
+const filterReadyQuizzes = async <T extends { id: string }>(quizzes: T[]) => {
+  const readiness = await Promise.all(
+    quizzes.map(async (quiz) => ({ id: quiz.id, ready: (await getQuizReadiness(quiz.id)).ready })),
+  );
+  const readyIds = new Set(readiness.filter((item) => item.ready).map((item) => item.id));
+  return quizzes.filter((quiz) => readyIds.has(quiz.id));
+};
+
+const getAll = async (isAdmin: boolean) => {
+  const quizzes = await prisma.quizzies.findMany({
+    where: isAdmin ? {} : { isActive: true },
     select: quizziesSelect,
     orderBy: { createAt: "desc" },
   });
+
+  return isAdmin ? quizzes : filterReadyQuizzes(quizzes);
 };
 
-const getById = async (id: string) => {
-  const quiz = await prisma.quizzies.findUnique({
-    where: { id },
+const getById = async (id: string, isAdmin: boolean) => {
+  const quiz = await prisma.quizzies.findFirst({
+    where: { id, ...(isAdmin ? {} : { isActive: true }) },
     select: quizziesSelect,
   });
 
@@ -102,21 +161,28 @@ const getById = async (id: string) => {
     throw new HttpError(404, "Quiz not found");
   }
 
+  if (!isAdmin) await assertQuizReady(id);
   return quiz;
 };
 
-const getBySubject = async (subjectId: string) => {
+const getBySubject = async (subjectId: string, isAdmin: boolean) => {
   await ensureSubjectActive(subjectId);
 
-  return prisma.quizzies.findMany({
-    where: { subjectId },
+  const quizzes = await prisma.quizzies.findMany({
+    where: { subjectId, ...(isAdmin ? {} : { isActive: true }) },
     select: quizziesSelect,
     orderBy: { createAt: "desc" },
   });
+
+  return isAdmin ? quizzes : filterReadyQuizzes(quizzes);
 };
 
 const create = async (data: CreateQuizziesInput, createdById: string) => {
   await ensureSubjectActive(data.subjectId);
+
+  if (data.isActive === true) {
+    throw new HttpError(400, "Create the quiz as a draft, add its questions and options, then publish it");
+  }
 
   return prisma.quizzies.create({
     data: {
@@ -125,7 +191,7 @@ const create = async (data: CreateQuizziesInput, createdById: string) => {
       description: data.description,
       difficulty: data.difficulty,
       timeLimitMinutes: data.timeLimitMinutes,
-      isActive: data.isActive ?? true,
+      isActive: false,
       createBy: createdById,
       createAt: new Date(),
     },
@@ -134,7 +200,11 @@ const create = async (data: CreateQuizziesInput, createdById: string) => {
 };
 
 const update = async (id: string, data: UpdateQuizziesInput) => {
-  await ensureQuizExists(id);
+  await ensureQuizExists(id, true);
+
+  if (data.isActive === true) {
+    await assertQuizReady(id);
+  }
 
   const updateData: Record<string, unknown> = {};
 
@@ -152,26 +222,114 @@ const update = async (id: string, data: UpdateQuizziesInput) => {
 };
 
 const remove = async (id: string) => {
+  const attempts = await prisma.quizAttempts.count({ where: { quizId: id } });
+
+  if (attempts > 0) {
+    throw new HttpError(409, "Quiz with attempts cannot be deleted; deactivate it instead");
+  }
+
   await prisma.quizzies.delete({ where: { id } });
 };
 
 const startAttempt = async (quizId: string, userId: string) => {
   await ensureQuizExists(quizId);
+  const readiness = await assertQuizReady(quizId);
 
-  const questionCount = await prisma.questions.count({ where: { quizId } });
+  const existingAttempt = await prisma.quizAttempts.findFirst({
+    where: { quizId, userId, finishedAt: OPEN_ATTEMPT_DATE },
+    select: attemptSummarySelect,
+  });
 
-  return prisma.quizAttempts.create({
+  if (existingAttempt) {
+    return {
+      ...existingAttempt,
+      finishedAt: null,
+      isFinished: false,
+      resumed: true,
+    };
+  }
+
+  const attempt = await prisma.quizAttempts.create({
     data: {
       quizId,
       userId,
       score: new Prisma.Decimal(0),
-      totalQuestion: questionCount,
+      totalQuestion: readiness.questionCount,
       correctAnswers: 0,
       startedAt: new Date(),
-      finishedAt: new Date(0),
+      finishedAt: OPEN_ATTEMPT_DATE,
     },
-    select: attemptSelect,
+    select: attemptSummarySelect,
   });
+
+  return {
+    ...attempt,
+    finishedAt: null,
+    isFinished: false,
+    resumed: false,
+  };
+};
+
+const getAttemptRecord = async (attemptId: string) => {
+  const attempt = await prisma.quizAttempts.findUnique({
+    where: { id: attemptId },
+    select: {
+      id: true,
+      userId: true,
+      quizId: true,
+      score: true,
+      totalQuestion: true,
+      correctAnswers: true,
+      startedAt: true,
+      finishedAt: true,
+      quizzies: {
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          difficulty: true,
+          timeLimitMinutes: true,
+          subject: { select: { id: true, name: true, level: true } },
+        },
+      },
+      user: {
+        select: { id: true, firstName: true, lastName: true },
+      },
+      studenAnswers: {
+        select: {
+          id: true,
+          questionId: true,
+          selectedOptionId: true,
+        },
+      },
+    },
+  });
+
+  if (!attempt) {
+    throw new HttpError(404, "Quiz attempt not found");
+  }
+
+  return attempt;
+};
+
+const assertAttemptOwner = (attemptUserId: string, userId: string, isAdmin = false) => {
+  if (!isAdmin && attemptUserId !== userId) {
+    throw new HttpError(403, "You can only access your own attempts");
+  }
+};
+
+const assertAttemptOpen = (finishedAt: Date) => {
+  if (isFinished(finishedAt)) {
+    throw new HttpError(400, "Attempt has already been finished");
+  }
+};
+
+const assertAttemptNotExpired = (startedAt: Date, timeLimitMinutes: number) => {
+  const expiresAt = startedAt.getTime() + timeLimitMinutes * 60_000;
+
+  if (Date.now() > expiresAt) {
+    throw new HttpError(400, "Attempt has expired");
+  }
 };
 
 const submitAttemptAnswer = async (
@@ -179,27 +337,17 @@ const submitAttemptAnswer = async (
   userId: string,
   data: SubmitAttemptAnswerInput,
 ) => {
-  const attempt = await prisma.quizAttempts.findUnique({
-    where: { id: attemptId },
-    select: { id: true, userId: true, quizId: true, finishedAt: true },
-  });
+  const attempt = await getAttemptRecord(attemptId);
+  assertAttemptOwner(attempt.userId, userId);
+  assertAttemptOpen(attempt.finishedAt);
+  assertAttemptNotExpired(attempt.startedAt, attempt.quizzies.timeLimitMinutes);
 
-  if (!attempt) {
-    throw new HttpError(404, "Quiz attempt not found");
-  }
-
-  if (attempt.userId !== userId) {
-    throw new HttpError(403, "You can only submit answers for your own attempts");
-  }
-
-  if (attempt.finishedAt) {
-    throw new HttpError(400, "Attempt has already been finished");
-  }
-
-  if (attempt.quizId !== (await prisma.questions.findUnique({
+  const question = await prisma.questions.findUnique({
     where: { id: data.questionId },
     select: { quizId: true },
-  }))?.quizId) {
+  });
+
+  if (!question || attempt.quizId !== question.quizId) {
     throw new HttpError(400, "Question does not belong to this quiz");
   }
 
@@ -217,113 +365,139 @@ const submitAttemptAnswer = async (
     select: { id: true },
   });
 
-  if (existingAnswer) {
-    return prisma.studenAnswers.update({
-      where: { id: existingAnswer.id },
-      data: {
-        selectedOptionId: data.selectedOptionId,
-        isCorrect: option.isCorrect,
-      },
-      select: {
-        id: true,
-        questionId: true,
-        selectedOptionId: true,
-        isCorrect: true,
-      },
-    });
-  }
+  const answer = existingAnswer
+    ? await prisma.studenAnswers.update({
+        where: { id: existingAnswer.id },
+        data: {
+          selectedOptionId: data.selectedOptionId,
+          isCorrect: option.isCorrect,
+        },
+        select: { id: true, questionId: true, selectedOptionId: true },
+      })
+    : await prisma.studenAnswers.create({
+        data: {
+          quizAttemptId: attemptId,
+          questionId: data.questionId,
+          selectedOptionId: data.selectedOptionId,
+          isCorrect: option.isCorrect,
+        },
+        select: { id: true, questionId: true, selectedOptionId: true },
+      });
 
-  return prisma.studenAnswers.create({
-    data: {
-      quizAttemptId: attemptId,
-      questionId: data.questionId,
-      selectedOptionId: data.selectedOptionId,
-      isCorrect: option.isCorrect,
-    },
+  return answer;
+};
+
+const getAttemptById = async (attemptId: string, userId: string, isAdmin: boolean) => {
+  const attempt = await getAttemptRecord(attemptId);
+  assertAttemptOwner(attempt.userId, userId, isAdmin);
+
+  const finished = isFinished(attempt.finishedAt);
+  const expiresAt = new Date(
+    attempt.startedAt.getTime() + attempt.quizzies.timeLimitMinutes * 60_000,
+  );
+
+  const questions = await prisma.questions.findMany({
+    where: { quizId: attempt.quizId },
     select: {
       id: true,
-      questionId: true,
-      selectedOptionId: true,
-      isCorrect: true,
+      questionText: true,
+      questionType: true,
+      points: true,
+      topic: true,
+      difficulty: true,
+      questionOptions: {
+        select: { id: true, optionText: true, isCorrect: true },
+      },
     },
+    orderBy: { id: "asc" },
   });
+
+  const selectedByQuestion = new Map(
+    attempt.studenAnswers.map((answer) => [answer.questionId, answer.selectedOptionId]),
+  );
+
+  return {
+    id: attempt.id,
+    score: attempt.score,
+    totalQuestion: attempt.totalQuestion,
+    correctAnswers: attempt.correctAnswers,
+    startedAt: attempt.startedAt,
+    finishedAt: finished ? attempt.finishedAt : null,
+    expiresAt,
+    isFinished: finished,
+    isExpired: !finished && Date.now() > expiresAt.getTime(),
+    quizzies: attempt.quizzies,
+    user: attempt.user,
+    questions: questions.map((question) => ({
+      id: question.id,
+      questionText: question.questionText,
+      questionType: question.questionType,
+      points: question.points,
+      topic: question.topic,
+      difficulty: question.difficulty,
+      selectedOptionId: selectedByQuestion.get(question.id) ?? null,
+      questionOptions: question.questionOptions.map((option) =>
+        finished || isAdmin
+          ? option
+          : { id: option.id, optionText: option.optionText },
+      ),
+    })),
+  };
 };
 
 const finishAttempt = async (attemptId: string, userId: string) => {
-  const attempt = await prisma.quizAttempts.findUnique({
-    where: { id: attemptId },
-    select: { id: true, userId: true, finishedAt: true, quizId: true },
-  });
+  const attempt = await getAttemptRecord(attemptId);
+  assertAttemptOwner(attempt.userId, userId);
+  assertAttemptOpen(attempt.finishedAt);
 
-  if (!attempt) {
-    throw new HttpError(404, "Quiz attempt not found");
-  }
-
-  if (attempt.userId !== userId) {
-    throw new HttpError(403, "You can only finish your own attempts");
-  }
-
-  if (attempt.finishedAt) {
-    throw new HttpError(400, "Attempt has already been finished");
-  }
-
-  return prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx) => {
     const answers = await tx.studenAnswers.findMany({
       where: { quizAttemptId: attemptId },
       select: { isCorrect: true, questionId: true },
     });
 
-    const correctAnswers = answers.filter((a) => a.isCorrect).length;
-
+    const correctAnswers = answers.filter((answer) => answer.isCorrect).length;
     const questions = await tx.questions.findMany({
-      where: { quizId: attempt.quizId, id: { in: answers.map((a) => a.questionId) } },
+      where: { quizId: attempt.quizId },
       select: { id: true, points: true },
     });
 
-    const pointsByQuestion = new Map(questions.map((q) => [q.id, q.points]));
-    const score = answers.reduce((acc, a) => {
-      if (!a.isCorrect) return acc;
-      return acc + (pointsByQuestion.get(a.questionId) ?? 0);
-    }, 0);
+    const correctQuestionIds = new Set(
+      answers.filter((answer) => answer.isCorrect).map((answer) => answer.questionId),
+    );
+    const totalPoints = questions.reduce((total, question) => total + question.points, 0);
+    const earnedPoints = questions.reduce(
+      (total, question) => total + (correctQuestionIds.has(question.id) ? question.points : 0),
+      0,
+    );
+    const scorePercent = totalPoints > 0 ? (earnedPoints / totalPoints) * 100 : 0;
 
-    const totalQuestions = await tx.questions.count({ where: { quizId: attempt.quizId } });
-
-    return tx.quizAttempts.update({
+    await tx.quizAttempts.update({
       where: { id: attemptId },
       data: {
         finishedAt: new Date(),
         correctAnswers,
-        totalQuestion: totalQuestions,
-        score: new Prisma.Decimal(score),
+        totalQuestion: questions.length,
+        score: new Prisma.Decimal(scorePercent.toFixed(2)),
       },
-      select: attemptSelect,
     });
   });
-};
 
-const getAttemptById = async (attemptId: string, userId: string, isAdmin: boolean) => {
-  const attempt = await prisma.quizAttempts.findUnique({
-    where: { id: attemptId },
-    select: attemptSelect,
-  });
-
-  if (!attempt) {
-    throw new HttpError(404, "Quiz attempt not found");
-  }
-
-  if (!isAdmin && attempt.user.id !== userId) {
-    throw new HttpError(403, "You can only access your own attempts");
-  }
-
-  return attempt;
+  return getAttemptById(attemptId, userId, false);
 };
 
 const getAttemptsByUser = async (userId: string) => {
-  return prisma.quizAttempts.findMany({
+  const attempts = await prisma.quizAttempts.findMany({
     where: { userId },
-    select: attemptSelect,
+    select: attemptSummarySelect,
     orderBy: { startedAt: "desc" },
   });
+
+  return attempts.map((attempt) => ({
+    ...attempt,
+    finishedAt: isFinished(attempt.finishedAt) ? attempt.finishedAt : null,
+    isFinished: isFinished(attempt.finishedAt),
+  }));
 };
 
 export const quizziesService = {
@@ -338,4 +512,5 @@ export const quizziesService = {
   finishAttempt,
   getAttemptById,
   getAttemptsByUser,
+  getQuizReadiness,
 };
