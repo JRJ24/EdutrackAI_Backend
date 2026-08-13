@@ -1,34 +1,51 @@
 # EdutrackAI Backend
 
-EdutrackAI Backend es la API base para una plataforma orientada al seguimiento, gestion y analisis de informacion educativa. El proyecto esta construido con TypeScript sobre Node.js y esta preparado para exponer servicios HTTP, manejar autenticacion, persistir datos en PostgreSQL y soportar funcionalidades en tiempo real.
+Backend de EdutrackAI, una API para gestionar usuarios, perfiles academicos, materias, calificaciones, sesiones de estudio, quizzes, recomendaciones, notificaciones y paneles de analisis para una plataforma educativa.
 
-El repositorio se encuentra en una etapa inicial de construccion. Ya incluye una estructura modular y utilidades reutilizables para CRUD, validacion, cifrado de campos sensibles y manejo de errores, mientras que los modulos principales de autenticacion y usuarios estan preparados para ser implementados.
+Este README esta escrito como documentacion funcional y tecnica para que el equipo de backend pueda explicar que se aplico, como funciona el sistema y que tecnicas se usaron durante el desarrollo.
 
-## Stack principal
+## Objetivo del proyecto
 
-- Node.js y TypeScript como base del backend.
-- Express para la API HTTP.
-- Prisma como ORM.
-- PostgreSQL como base de datos.
-- Zod para validacion de datos.
-- Socket.IO para comunicacion en tiempo real.
-- Passport, Google OAuth y JWT para autenticacion.
-- bcrypt/bcryptjs para hashing de contrasenas.
-- AWS S3, Multer y Sharp para manejo y procesamiento de archivos.
+EdutrackAI busca centralizar informacion academica del estudiante y convertirla en seguimiento util. Desde el backend se administran los datos principales de la plataforma, se protegen los endpoints con autenticacion, se validan entradas, se registra actividad importante y se exponen endpoints para que el frontend pueda mostrar progreso, rendimiento y recomendaciones.
+
+## Stack usado
+
+- Node.js con TypeScript para tener tipado y mejor mantenibilidad.
+- Express 5 para exponer la API HTTP.
+- Prisma 7 como ORM para trabajar con PostgreSQL.
+- PostgreSQL como base de datos relacional.
+- Zod para validar `body` y `params` antes de llegar a los controladores.
+- JWT para autenticacion basada en tokens.
+- bcrypt para almacenar contrasenas de forma segura.
+- Socket.IO como base para comunicacion en tiempo real.
+- Morgan y CORS como middlewares de soporte.
+- dotenv para variables de entorno.
 - pnpm como gestor de paquetes.
 
-## Enfoque de arquitectura
+## Funcionamiento general
 
-La estructura esta pensada para crecer por modulos funcionales dentro de `src/modules`. Cada modulo puede separar sus responsabilidades en:
+El punto de entrada es `src/app.ts`. El servidor crea una aplicacion Express, registra middlewares globales, monta todas las rutas bajo `/api`, conecta Prisma con PostgreSQL e inicializa Socket.IO sobre el servidor HTTP.
 
-- `routes`: definicion de endpoints.
-- `controller`: manejo de request/response.
-- `service`: logica de negocio y acceso a datos.
-- `validation`: esquemas de validacion con Zod.
+Flujo general de una peticion:
 
-Ademas, el proyecto incluye helpers genericos para crear servicios, controladores y rutas CRUD de manera consistente, reduciendo repeticion en futuros modulos.
+1. El cliente envia una solicitud a una ruta bajo `/api`.
+2. Express aplica middlewares globales como `cors`, `morgan`, `express.json` y `express.urlencoded`.
+3. La ruta del modulo aplica validaciones con Zod y, si corresponde, autenticacion con `requireAuth`.
+4. El controlador recibe la peticion, llama al servicio y arma la respuesta HTTP.
+5. El servicio contiene la logica de negocio y consulta la base de datos mediante Prisma.
+6. Si ocurre un error controlado, se usa `HttpError` para responder con el codigo correcto.
+7. Si la ruta no existe, el backend devuelve `404 Route not found`.
 
-## Estructura general
+## Arquitectura por modulos
+
+La API esta organizada por dominios dentro de `src/modules`. Cada modulo separa responsabilidades en archivos claros:
+
+- `*.routes.ts`: define endpoints, middlewares, permisos y validaciones.
+- `*.controller.ts`: maneja `Request` y `Response`.
+- `*.service.ts`: contiene reglas de negocio y acceso a datos.
+- `*.validation.ts`: define esquemas Zod para validar entradas.
+
+Estructura principal:
 
 ```text
 src/
@@ -41,47 +58,306 @@ src/
 +-- middlewares/
 +-- modules/
 |   +-- auth/
+|   +-- roles/
 |   +-- users/
+|   +-- academic-profile/
+|   +-- subjects/
+|   +-- grades/
+|   +-- study-sessions/
+|   +-- quizzies/
+|   +-- questions/
+|   +-- resources/
+|   +-- recommendations/
+|   +-- notifications/
+|   +-- dashboard/
+|   +-- admin/
 +-- public/
 ```
 
-Otros directorios importantes:
+## Base de datos
 
-- `prisma/`: configuracion del esquema Prisma y futuras migraciones.
-- `docs/`: documentacion tecnica del estado actual del proyecto.
+La base de datos se modela en `prisma/schema.prisma`. El proyecto usa PostgreSQL con varios schemas logicos:
 
-## Estado actual
+- `auth`: roles e historial de inicio de sesion.
+- `users`: usuarios, perfiles academicos y asignaciones usuario-materia.
+- `system`: materias, recursos, notificaciones y auditoria.
+- `academics`: notas, sesiones de estudio, recomendaciones y cambios de notas.
+- `quizz`: quizzes, preguntas, opciones, intentos y respuestas.
 
-Implementado:
+Modelos principales:
 
-- Base de helpers CRUD.
-- Validaciones reutilizables con Zod.
-- Middleware de validacion para body y params.
-- Manejo centralizado de errores HTTP.
-- Cifrado y descifrado de campos sensibles.
-- Hashing de contrasenas.
-- Configuracion base de Prisma para PostgreSQL.
+- `User`: informacion del estudiante, credenciales, estado, rol y relaciones academicas.
+- `Roles`: roles como `student` y `admin`.
+- `AcademicProfile`: estilo de aprendizaje, meta semanal y dificultades.
+- `Subject` y `UserSubject`: materias y asignaciones de usuarios a materias.
+- `Grades` y `GradeChange`: notas y trazabilidad cuando cambia una calificacion.
+- `StudySessions`: registro de sesiones de estudio y productividad.
+- `Quizzies`, `Questions`, `QuestionOptions`, `QuizAttempts` y `StudenAnswers`: flujo de evaluaciones.
+- `Resouces` y `Recommendations`: recursos academicos y recomendaciones personalizadas.
+- `Notifications`: avisos para usuarios.
+- `AuditLog`: registro de acciones administrativas.
 
-Pendiente:
+## Funcionalidades implementadas
 
-- Inicializacion completa de Express.
-- Registro global de rutas.
-- Cliente Prisma compartido.
-- Modelos y migraciones Prisma.
-- Implementacion de autenticacion.
-- Implementacion de usuarios.
-- Middlewares de seguridad.
-- Scripts de desarrollo, build y pruebas.
+### Autenticacion
 
-## Documentacion
+- Registro publico de usuarios en `/api/auth/register`.
+- Login publico en `/api/auth/login`.
+- Normalizacion de email antes de buscar o crear usuarios.
+- Validacion de duplicados por email y codigo de estudiante.
+- Asignacion automatica del rol `student` al registrarse.
+- Hashing de contrasena con bcrypt antes de guardar en base de datos.
+- Generacion de token JWT con `userId`, `email` y `role`.
+- Actualizacion de `lastLogin` al iniciar sesion correctamente.
 
-La documentacion tecnica inicial esta disponible en:
+### Autorizacion y seguridad
 
-```text
-docs/INITIAL_DOCUMENT.MD
+- `requireAuth` valida el header `Authorization: Bearer <token>`.
+- `requireRole(...roles)` restringe endpoints segun rol.
+- Los endpoints administrativos requieren rol `admin`.
+- Las consultas sensibles evitan devolver el campo `password`.
+- Las preguntas y opciones ocultan `isCorrect` para usuarios que no son administradores.
+- Los controladores y helpers de error manejan codigos HTTP como `400`, `401`, `403`, `404` y `409`.
+
+### Usuarios y roles
+
+- CRUD de usuarios.
+- Endpoint `/api/users/me` para obtener el perfil del usuario autenticado.
+- Cambio de contrasena propia en `/api/users/me/password`.
+- CRUD de roles.
+- Validacion de rol existente al crear o actualizar usuarios.
+
+### Perfil academico
+
+- CRUD de perfiles academicos.
+- Consulta de perfil por usuario.
+- Validacion para permitir un solo perfil academico por usuario.
+- Validacion de usuario activo antes de asociar perfil.
+
+### Materias
+
+- CRUD de materias.
+- Asignacion de usuarios a materias.
+- Actualizacion de promedio actual, dificultad y estado de la asignacion.
+- Eliminacion de asignaciones usuario-materia.
+
+### Calificaciones
+
+- CRUD de notas.
+- Listado filtrado por usuario autenticado; admin puede ver todas.
+- Filtro por materia.
+- Validacion de relacion previa `UserSubject` antes de crear una nota.
+- Registro de `GradeChange` cuando cambia el valor de una calificacion.
+
+### Sesiones de estudio
+
+- CRUD de sesiones de estudio.
+- Filtro por materia.
+- Calculo automatico de `durationMinutes` usando `startedAt` y `endedAt` cuando no se envia la duracion.
+- Registro de metodo de estudio, notas y nivel de productividad.
+
+### Quizzes y preguntas
+
+- CRUD de quizzes.
+- Filtro de quizzes por materia.
+- Creacion, actualizacion y eliminacion de preguntas.
+- Creacion, actualizacion y eliminacion de opciones.
+- Inicio de intento de quiz.
+- Registro o actualizacion de respuestas del intento.
+- Finalizacion de intento con recalculo de puntaje y respuestas correctas.
+- Consulta de intentos por usuario y detalle de intento.
+
+### Recursos y recomendaciones
+
+- CRUD de recursos academicos.
+- Filtro de recursos por materia.
+- CRUD de recomendaciones.
+- Restriccion para que un usuario vea sus propias recomendaciones; admin puede ver todas.
+- Validacion de relaciones entre usuario, materia y recurso.
+
+### Notificaciones
+
+- CRUD de notificaciones.
+- Listado de notificaciones del usuario autenticado.
+- Marcado individual como leida.
+- Marcado masivo de todas las notificaciones como leidas.
+
+### Dashboard
+
+- Resumen del usuario autenticado.
+- Rendimiento por materia.
+- Calculo de racha de estudio.
+- Agregaciones para mostrar sesiones recientes, promedio de resultados y notificaciones pendientes.
+
+### Administracion
+
+- Listado paginado de usuarios con filtros.
+- Activacion y desactivacion de usuarios.
+- Estadisticas generales por modelo.
+- Consulta paginada de logs de auditoria.
+- Registro en `AuditLog` para cambios administrativos relevantes.
+
+### Tiempo real
+
+- Socket.IO se inicializa junto con el servidor HTTP.
+- La instancia se guarda en Express mediante `app.set("socketio", io)` para que pueda reutilizarse desde controladores o servicios.
+- Actualmente queda preparada la base para eventos en tiempo real como notificaciones, salas privadas o actualizaciones academicas.
+
+## Rutas principales
+
+Todas las rutas usan el prefijo global `/api`.
+
+| Modulo | Rutas base | Descripcion |
+| --- | --- | --- |
+| Auth | `/api/auth` | Registro e inicio de sesion. |
+| Roles | `/api/roles` | CRUD de roles. |
+| Users | `/api/users` | Gestion de usuarios y perfil propio. |
+| Academic profile | `/api/academic-profile` | Perfil academico del estudiante. |
+| Subjects | `/api/subjects` | Materias y asignacion de usuarios. |
+| Grades | `/api/grades` | Calificaciones y cambios de notas. |
+| Study sessions | `/api/study-sessions` | Sesiones de estudio. |
+| Quizzies | `/api/quizzies` | Quizzes e intentos. |
+| Questions | `/api/questions` | Preguntas y opciones. |
+| Resources | `/api/resources` | Recursos academicos. |
+| Recommendations | `/api/recommendations` | Recomendaciones personalizadas. |
+| Notifications | `/api/notifications` | Notificaciones y lectura. |
+| Dashboard | `/api/dashboard` | Resumen, rendimiento y racha. |
+| Admin | `/api/admin` | Gestion administrativa y auditoria. |
+
+Endpoints publicos:
+
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+
+Ejemplos de endpoints protegidos:
+
+- `GET /api/users/me`
+- `GET /api/dashboard/summary`
+- `POST /api/study-sessions`
+- `POST /api/quizzies/:id/attempts`
+- `PATCH /api/notifications/:id/read`
+
+Ejemplos de endpoints de administrador:
+
+- `GET /api/admin/users`
+- `PATCH /api/admin/users/:id/active`
+- `GET /api/admin/stats`
+- `GET /api/admin/audit-logs`
+- `POST /api/questions`
+- `POST /api/resources`
+
+## Tecnicas aplicadas por el equipo backend
+
+- Arquitectura modular: cada funcionalidad vive en su propio modulo para facilitar mantenimiento y escalabilidad.
+- Separacion por capas: rutas, controladores, servicios y validaciones no mezclan responsabilidades.
+- Validacion temprana: Zod valida entradas antes de ejecutar logica de negocio.
+- Autenticacion stateless: JWT permite proteger rutas sin guardar sesiones en servidor.
+- Control de acceso por rol: `requireRole` permite separar permisos de usuario normal y administrador.
+- Hashing de contrasenas: bcrypt evita guardar contrasenas en texto plano.
+- ORM tipado: Prisma simplifica consultas y relaciones contra PostgreSQL.
+- Manejo de errores en controladores: `HttpError` y `getErrorResponse` centralizan codigos y mensajes funcionales.
+- Reutilizacion CRUD: helpers genericos reducen codigo repetido en modulos simples.
+- Auditoria: `AuditLog` registra acciones administrativas importantes.
+- Transacciones y trazabilidad: al modificar calificaciones se registra el cambio en `GradeChange`.
+- Agregaciones: dashboard calcula resumen, rendimiento y rachas desde los datos guardados.
+- Preparacion para tiempo real: Socket.IO queda listo para emitir eventos desde la API.
+- Apagado controlado: el servidor escucha `SIGINT` y `SIGTERM` para cerrar HTTP y desconectar Prisma correctamente.
+
+## Variables de entorno
+
+Crear un archivo `.env` tomando como base `.env.example`:
+
+```env
+DATABASE_URL=
+ENCRYPTION_KEY=
+JWT_SECRET=
+PORT=3000
 ```
 
-Ese archivo describe con mas detalle la estructura actual, tecnologias utilizadas, responsabilidades por carpeta y recomendaciones inmediatas para continuar el desarrollo.
+Variables principales:
+
+- `DATABASE_URL`: cadena de conexion a PostgreSQL.
+- `JWT_SECRET`: clave usada para firmar y verificar tokens JWT.
+- `ENCRYPTION_KEY`: clave usada por helpers de cifrado de campos sensibles.
+- `PORT`: puerto donde se levanta la API.
+
+## Instalacion y ejecucion
+
+Instalar dependencias:
+
+```bash
+pnpm install
+```
+
+Generar cliente Prisma:
+
+```bash
+pnpm db:generate
+```
+
+Ejecutar migraciones en desarrollo:
+
+```bash
+pnpm db:migrate
+```
+
+Cargar roles base (`student` y `admin`):
+
+```bash
+pnpm db:seed
+```
+
+Levantar el servidor en modo desarrollo:
+
+```bash
+pnpm dev
+```
+
+La API queda disponible en:
+
+```text
+http://localhost:3000/api
+```
+
+El puerto puede cambiar segun la variable `PORT`.
+
+## Scripts disponibles
+
+| Script | Descripcion |
+| --- | --- |
+| `pnpm dev` | Ejecuta el servidor con `tsx watch`. |
+| `pnpm build` | Compila TypeScript y resuelve aliases. |
+| `pnpm db:migrate` | Crea/aplica migraciones en desarrollo. |
+| `pnpm db:deploy` | Aplica migraciones en ambientes desplegados. |
+| `pnpm db:generate` | Genera el cliente Prisma. |
+| `pnpm db:studio` | Abre Prisma Studio. |
+| `pnpm db:seed` | Inserta o actualiza roles base. |
+
+Nota tecnica: por la configuracion actual de `tsconfig.json`, el build genera salida dentro de `dist/src`. Si se ejecuta la version compilada manualmente, el archivo principal queda en `dist/src/app.js`.
+
+## Guia para explicar el backend
+
+El equipo backend puede presentar el proyecto en este orden:
+
+1. Explicar que EdutrackAI es una API educativa que centraliza datos academicos del estudiante.
+2. Mostrar que la arquitectura esta separada por modulos y capas para mantener el codigo ordenado.
+3. Explicar el flujo de autenticacion: registro, hashing de contrasena, login y token JWT.
+4. Explicar como se protegen rutas con `requireAuth` y permisos de admin con `requireRole`.
+5. Mostrar como Prisma modela las relaciones entre usuarios, materias, notas, sesiones, quizzes y recomendaciones.
+6. Explicar validaciones con Zod y manejo de errores con respuestas HTTP claras.
+7. Presentar funcionalidades academicas: materias, notas, sesiones, quizzes, dashboard y recomendaciones.
+8. Presentar funcionalidades de administracion: usuarios, estadisticas y auditoria.
+9. Mencionar que Socket.IO deja preparada la API para notificaciones o eventos en tiempo real.
+10. Cerrar con la ejecucion local: variables de entorno, migraciones, seed y `pnpm dev`.
+
+## Documentacion complementaria
+
+El directorio `docs/` contiene documentos de soporte del desarrollo:
+
+- `docs/INITIAL_DOCUMENT.MD`
+- `docs/PRISMA_MODULES-DOCUMENT.MD`
+- `docs/BACKEND_ENDPOINTS_STATUS.MD`
+- `docs/WORK_PLAN_TEAM.MD`
 
 ## Licencia
 
